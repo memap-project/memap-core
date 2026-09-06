@@ -15,7 +15,7 @@ type Cache struct {
 	cfg     config.Config
 }
 
-// Namespace represents a scoped store operations within a specific namespace.
+// Namespace represents scoped store operations within a specific namespace.
 type Namespace struct {
 	name    string
 	manager *ns.NamespaceManager
@@ -59,7 +59,7 @@ func (c *Cache) Config() config.Config {
 	return c.cfg
 }
 
-// WithNamespace returns an Namespace scoped to the given namespace name.
+// WithNamespace returns a Namespace scoped to the given namespace name.
 func (c *Cache) WithNamespace(name string) *Namespace {
 	return &Namespace{
 		name:    name,

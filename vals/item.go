@@ -2,17 +2,18 @@ package vals
 
 import "time"
 
-// Item represents a string value with optional expiration time.
+// Item represents a string value with optional expiration.
 // If expiresAt is 0, the Item has no expiration.
 type Item struct {
 	value     string
 	expiresAt int64
 }
 
-// NewItem creates a new Item.
+// NewItem creates a new Item with the given value.
 func NewItem(value string) *Item {
 	return &Item{
-		value: value,
+		value:     value,
+		expiresAt: 0,
 	}
 }
 

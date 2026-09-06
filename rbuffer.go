@@ -50,17 +50,17 @@ func (c *Cache) BReset(key string) error {
 	return c.manager.BReset("", key)
 }
 
-// BDel deletes the ring buffer in the default namespace.
+// BDel removes the ring buffer from the default namespace.
 func (c *Cache) BDel(key string) error {
 	return c.manager.BDel("", key)
 }
 
-// BExpire sets the expiration time of the ring buffer in the default namespace.
+// BExpire sets the expiration time for the ring buffer in the default namespace.
 func (c *Cache) BExpire(key string, ttl int64) error {
 	return c.manager.BExpire("", key, ttl)
 }
 
-// BTTL returns the time-to-live of the ring buffer in the default namespace.
+// BTTL returns the time-to-live of the ring buffer in seconds from the default namespace.
 func (c *Cache) BTTL(key string) (int64, error) {
 	return c.manager.BTTL("", key)
 }
@@ -115,17 +115,17 @@ func (ctx *Namespace) BReset(key string) error {
 	return ctx.manager.BReset(ctx.name, key)
 }
 
-// BDel deletes the ring buffer in this namespace.
+// BDel removes the ring buffer from this namespace.
 func (ctx *Namespace) BDel(key string) error {
 	return ctx.manager.BDel(ctx.name, key)
 }
 
-// BExpire sets the expiration time of the ring buffer in this namespace.
+// BExpire sets the expiration time for the ring buffer in this namespace.
 func (ctx *Namespace) BExpire(key string, ttl int64) error {
 	return ctx.manager.BExpire(ctx.name, key, ttl)
 }
 
-// BTTL returns the time-to-live of the ring buffer in this namespace.
+// BTTL returns the time-to-live of the ring buffer in seconds from this namespace.
 func (ctx *Namespace) BTTL(key string) (int64, error) {
 	return ctx.manager.BTTL(ctx.name, key)
 }

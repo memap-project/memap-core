@@ -4,11 +4,13 @@ import (
 	"errors"
 )
 
+// Configuration validation errors.
 var (
 	ErrInvalidShardCount      = errors.New("shard count must be a power of two")
 	ErrInvalidCleanerInterval = errors.New("cleanerInterval must be greater than 0")
 )
 
+// isPowerOfTwo reports whether n is a power of two.
 func isPowerOfTwo(n uint8) bool {
 	return n > 0 && (n&(n-1)) == 0
 }

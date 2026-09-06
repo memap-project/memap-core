@@ -15,10 +15,13 @@ type Counter struct {
 	expiresAt int64
 }
 
-// NewCounter creates a new Counter with zero values.
+// NewCounter creates a new Counter.
 func NewCounter() *Counter {
 	return &Counter{
-		mu: sync.RWMutex{},
+		mu:        sync.RWMutex{},
+		value:     0,
+		limit:     0,
+		expiresAt: 0,
 	}
 }
 

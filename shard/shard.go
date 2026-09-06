@@ -4,7 +4,7 @@ import (
 	"sync"
 )
 
-// Shard is a thread-safe unit of storage containing a map of items protected by an RWMutex.
+// Shard is a generic thread-safe map around default map.
 type Shard[V any] struct {
 	mu    sync.RWMutex
 	items map[string]V

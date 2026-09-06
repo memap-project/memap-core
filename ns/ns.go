@@ -10,7 +10,7 @@ import (
 	"github.com/memap-project/memap-core/shard/shrbuffer"
 )
 
-// Namespace represents an isolated container storing maps, hashes, and counters.
+// Namespace represents an isolated container storing maps, hashes, counters, and ring buffers.
 type Namespace struct {
 	mu        sync.RWMutex
 	cfg       *config.NamespaceConfig

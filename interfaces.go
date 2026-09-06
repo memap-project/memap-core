@@ -48,7 +48,7 @@ type CounterStore interface {
 	CDecrBy(key string, alpha int64) (int64, error)
 }
 
-// RingBufferStore defines circular ring buffer operations.
+// RingBufferStore defines ring buffer operations.
 type RingBufferStore interface {
 	BInit(key string, capacity, ttl int64) error
 	BPush(key, value string) error

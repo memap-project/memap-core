@@ -131,7 +131,7 @@ func (nm *NamespaceManager) CExpire(ns, key string, ttl int64) error {
 	return nil
 }
 
-// CTTL returns the remaining time-to-live of the counter in seconds from the specified namespace.
+// CTTL returns the time-to-live of the counter in seconds from the specified namespace.
 // If ns is empty, the default namespace is used.
 // Returns -1 if the counter has no expiration time.
 // Returns -2 if the counter does not exist or is expired.

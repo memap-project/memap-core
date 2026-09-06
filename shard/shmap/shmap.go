@@ -7,13 +7,13 @@ import (
 	"github.com/memap-project/memap-core/vals"
 )
 
-// ShardedMap is a partitioned map storing string key-value pairs across multiple shards.
+// ShardedMap is a partitioned map storing key-value pairs across multiple shards.
 type ShardedMap struct {
 	shardCount uint8
 	shards     []*shard.Shard[*vals.Item]
 }
 
-// NewShardedMap creates a new ShardedMap with default shard count (8).
+// NewShardedMap creates a new ShardedMap with the given shard count.
 func NewShardedMap(shardCount uint8) *ShardedMap {
 	shards := make([]*shard.Shard[*vals.Item], shardCount)
 	for i := range shards {

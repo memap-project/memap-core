@@ -7,13 +7,13 @@ import (
 	"github.com/memap-project/memap-core/vals"
 )
 
-// ShardedCounter is a partitioned counter storage across multiple shards.
+// ShardedCounter is a partitioned map storing counters across multiple shards.
 type ShardedCounter struct {
 	shardCount uint8
 	shards     []*shard.Shard[*vals.Counter]
 }
 
-// NewShardedCounter creates a new ShardedCounter with default shard count (8).
+// NewShardedCounter creates a new ShardedCounter with the given shard count.
 func NewShardedCounter(shardCount uint8) *ShardedCounter {
 	shards := make([]*shard.Shard[*vals.Counter], shardCount)
 	for i := range shards {
@@ -78,7 +78,7 @@ func (s *ShardedCounter) GetLimit(key string) (int64, bool) {
 	return c.GetLimit(), true
 }
 
-// Get returns the current value of the counter for the given key.
+// Get retrieves the value of the counter for the given key.
 // Returns 0 and false if the counter does not exist or is expired.
 func (s *ShardedCounter) Get(key string) (int64, bool) {
 	shard := s.getShard(key)
@@ -111,7 +111,7 @@ func (s *ShardedCounter) Expire(key string, ttl int64) bool {
 	})
 }
 
-// TTL returns the remaining time-to-live of the counter in seconds.
+// TTL returns the remaining time-to-live of the counter for the given key in seconds.
 // Returns -1 and true if the counter exists and has no expiration time.
 // Returns -2 and false if the counter does not exist or is expired.
 func (s *ShardedCounter) TTL(key string) (int64, bool) {

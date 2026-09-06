@@ -101,7 +101,7 @@ func (h *Hash) Len() int64 {
 	return int64(len(h.hash))
 }
 
-// Keys returns a slice of all field names in the Hash.
+// Keys returns all field names in the Hash.
 func (h *Hash) Keys() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -112,7 +112,7 @@ func (h *Hash) Keys() []string {
 	return keys
 }
 
-// Values returns a slice of all field values in the Hash.
+// Values returns all field values in the Hash.
 func (h *Hash) Values() []string {
 	h.mu.RLock()
 	defer h.mu.RUnlock()

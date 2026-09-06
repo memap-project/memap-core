@@ -1,14 +1,17 @@
 package config
 
+// Config represents configuration for the memap core.
 type Config struct {
 	CleanerInterval int             `yaml:"cleanerInterval"`
 	Namespace       NamespaceConfig `yaml:"namespace"`
 }
 
+// NamespaceConfig represents configuration for namespaces.
 type NamespaceConfig struct {
 	ShardCounts ShardCounts `yaml:"shardCounts"`
 }
 
+// ShardCounts specifies the number of shards for each storage component.
 type ShardCounts struct {
 	Shmap     uint8 `yaml:"shmap"`
 	Shhash    uint8 `yaml:"shhash"`
@@ -16,6 +19,7 @@ type ShardCounts struct {
 	Shrbuffer uint8 `yaml:"shrbuffer"`
 }
 
+// DefaultConfig returns the default configuration.
 func DefaultConfig() Config {
 	return Config{
 		CleanerInterval: 10,

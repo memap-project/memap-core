@@ -5,11 +5,13 @@ import (
 	"time"
 )
 
+// intstr represents types supported by RingBuffer (int64 or string).
 type intstr interface {
 	int64 | string
 }
 
 // RingBuffer is a thread-safe circular buffer with fixed capacity and optional expiration.
+// If expiresAt is 0, the RingBuffer has no expiration.
 type RingBuffer[T intstr] struct {
 	mu        sync.RWMutex
 	buf       []T
@@ -23,12 +25,13 @@ type RingBuffer[T intstr] struct {
 // NewRingBuffer creates a new RingBuffer with the given capacity.
 func NewRingBuffer[T intstr](cap int64) *RingBuffer[T] {
 	return &RingBuffer[T]{
-		mu:   sync.RWMutex{},
-		buf:  make([]T, cap),
-		cap:  cap,
-		head: 0,
-		tail: 0,
-		len:  0,
+		mu:        sync.RWMutex{},
+		buf:       make([]T, cap),
+		cap:       cap,
+		len:       0,
+		head:      0,
+		tail:      0,
+		expiresAt: 0,
 	}
 }
 
@@ -83,7 +86,7 @@ func (rb *RingBuffer[T]) Push(val T) {
 }
 
 // Pop removes and returns the value at the head of the RingBuffer.
-// Returns false and zero value if the RingBuffer is empty.
+// Returns zero value and false if the RingBuffer is empty.
 func (rb *RingBuffer[T]) Pop() (T, bool) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
@@ -98,7 +101,7 @@ func (rb *RingBuffer[T]) Pop() (T, bool) {
 }
 
 // At returns the value at the specified logical index (0 is oldest).
-// Returns false and zero value if index is out of range.
+// Returns zero value and false if index is out of range.
 func (rb *RingBuffer[T]) At(index int64) (T, bool) {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
@@ -128,7 +131,7 @@ func (rb *RingBuffer[T]) Slice() []T {
 }
 
 // Peek returns the value at the head (oldest) of the RingBuffer without removing it.
-// Returns false and zero value if the RingBuffer is empty.
+// Returns zero value and false if the RingBuffer is empty.
 func (rb *RingBuffer[T]) Peek() (T, bool) {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
@@ -141,7 +144,7 @@ func (rb *RingBuffer[T]) Peek() (T, bool) {
 }
 
 // Back returns the value at the tail (newest) of the RingBuffer without removing it.
-// Returns false and zero value if the RingBuffer is empty.
+// Returns zero value and false if the RingBuffer is empty.
 func (rb *RingBuffer[T]) Back() (T, bool) {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()

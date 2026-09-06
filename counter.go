@@ -30,7 +30,7 @@ func (c *Cache) CExpire(key string, ttl int64) error {
 	return c.manager.CExpire("", key, ttl)
 }
 
-// CTTL returns the remaining time-to-live of the counter in seconds from the default namespace.
+// CTTL returns the time-to-live of the counter in seconds from the default namespace.
 func (c *Cache) CTTL(key string) (int64, error) {
 	return c.manager.CTTL("", key)
 }
@@ -75,7 +75,7 @@ func (ctx *Namespace) CExpire(key string, ttl int64) error {
 	return ctx.manager.CExpire(ctx.name, key, ttl)
 }
 
-// CTTL returns the remaining time-to-live of the counter in seconds from this namespace.
+// CTTL returns the time-to-live of the counter in seconds from this namespace.
 func (ctx *Namespace) CTTL(key string) (int64, error) {
 	return ctx.manager.CTTL(ctx.name, key)
 }

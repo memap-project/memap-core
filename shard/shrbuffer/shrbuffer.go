@@ -7,7 +7,7 @@ import (
 	"github.com/memap-project/memap-core/vals"
 )
 
-// ShardedRingBuffer is a partitioned storage for ring buffers across multiple shards.
+// ShardedRingBuffer is a partitioned map storing ring buffers across multiple shards.
 type ShardedRingBuffer struct {
 	shardCount uint8
 	shards     []*shard.Shard[*vals.RingBuffer[string]]
@@ -47,7 +47,7 @@ func (s *ShardedRingBuffer) Init(key string, cap, ttl int64) bool {
 	return true
 }
 
-// Push adds a value to the ring buffer with the given key.
+// Push adds a value to the ring buffer for the given key.
 // Returns false if the ring buffer does not exist or is expired.
 func (s *ShardedRingBuffer) Push(key, value string) bool {
 	sh := s.getShard(key)
@@ -154,7 +154,7 @@ func (s *ShardedRingBuffer) Back(key string) (string, shard.Status) {
 	return "", shard.StatusBufferEmpty
 }
 
-// Cap returns the capacity of the ring buffer with the given key.
+// Cap returns the capacity of the ring buffer for the given key.
 // Returns 0 and false if the ring buffer does not exist or is expired.
 func (s *ShardedRingBuffer) Cap(key string) (int64, bool) {
 	sh := s.getShard(key)
@@ -169,7 +169,7 @@ func (s *ShardedRingBuffer) Cap(key string) (int64, bool) {
 	return rb.Cap(), true
 }
 
-// Len returns the number of elements in the ring buffer with the given key.
+// Len returns the number of elements in the ring buffer for the given key.
 // Returns 0 and false if the ring buffer does not exist or is expired.
 func (s *ShardedRingBuffer) Len(key string) (int64, bool) {
 	sh := s.getShard(key)
@@ -184,7 +184,7 @@ func (s *ShardedRingBuffer) Len(key string) (int64, bool) {
 	return rb.Len(), true
 }
 
-// Reset resets the ring buffer with the given key to an empty state.
+// Reset resets the ring buffer for the given key to an empty state.
 // Returns false if the ring buffer does not exist or is expired.
 func (s *ShardedRingBuffer) Reset(key string) bool {
 	sh := s.getShard(key)
@@ -200,7 +200,7 @@ func (s *ShardedRingBuffer) Reset(key string) bool {
 	return true
 }
 
-// Delete removes the ring buffer with the given key.
+// Delete removes the ring buffer for the given key.
 func (s *ShardedRingBuffer) Delete(key string) {
 	s.getShard(key).Delete(key)
 }
@@ -217,7 +217,7 @@ func (s *ShardedRingBuffer) Expire(key string, ttl int64) bool {
 	})
 }
 
-// TTL returns the remaining time-to-live of the ring buffer in seconds.
+// TTL returns the remaining time-to-live of the ring buffer for the given key in seconds.
 // Returns -1 and true if the ring buffer exists and has no expiration time.
 // Returns -2 and false if the ring buffer does not exist or is expired.
 func (s *ShardedRingBuffer) TTL(key string) (int64, bool) {

@@ -6,6 +6,7 @@ import (
 	"github.com/memap-project/memap-core/shard"
 )
 
+// Namespace and storage operation errors.
 var (
 	ErrNamespaceAlreadyExists = errors.New("namespace already exists")
 	ErrNamespaceNotFound      = errors.New("namespace not found")
@@ -17,6 +18,7 @@ var (
 	ErrFieldNotFound          = errors.New("field not found")
 )
 
+// statusToError converts a shard.Status code to a corresponding error.
 func statusToError(status shard.Status) error {
 	switch status {
 	case shard.StatusSuccess:

@@ -195,7 +195,8 @@ func (nm *NamespaceManager) HFGet(ns, key, field string) (string, error) {
 	return v, statusToError(status)
 }
 
-// HFSet sets or updates a field in the hash for the given key in the specified namespace. Creates hash if it does not exist.
+// HFSet sets or updates a field in the hash for the given key in the specified namespace.
+// Creates a new hash if one does not exist.
 // If ns is empty, the default namespace is used.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) HFSet(ns, key, field, value string) error {

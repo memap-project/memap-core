@@ -59,12 +59,12 @@ func (nm *NamespaceManager) CleanExpired() {
 	nm.cleanCustomNamespaces()
 }
 
-// cleanDefaultNs cleans all expired keys in the default namespace.
+// cleanDefaultNs removes all expired keys in the default namespace.
 func (nm *NamespaceManager) cleanDefaultNs() {
 	nm.defaultNs.CleanExpired()
 }
 
-// cleanCustomNamespaces cleans all expired keys in all custom namespaces.
+// cleanCustomNamespaces removes all expired keys in all custom namespaces.
 func (nm *NamespaceManager) cleanCustomNamespaces() {
 	nm.namespaces.Range(func(k string, v *Namespace) bool {
 		v.CleanExpired()
