@@ -3,6 +3,7 @@ package vals
 import (
 	"maps"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -11,54 +12,48 @@ import (
 type Hash struct {
 	mu        sync.RWMutex
 	hash      map[string]string
-	expiresAt int64
+	expiresAt atomic.Int64
 }
 
 // NewHash creates a new Hash.
 func NewHash() *Hash {
 	return &Hash{
-		mu:        sync.RWMutex{},
-		hash:      make(map[string]string, 8),
-		expiresAt: 0,
+		mu:   sync.RWMutex{},
+		hash: make(map[string]string, 8),
 	}
-}
-
-func (h *Hash) isExpired() bool {
-	if h.expiresAt == 0 {
-		return false
-	}
-	return time.Now().Unix() > h.expiresAt
 }
 
 // IsExpired returns true if the Hash has an expiration time and is expired.
 // Returns false if the Hash has no expiration time or is not yet expired.
 func (h *Hash) IsExpired() bool {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	return h.isExpired()
+	exp := h.expiresAt.Load()
+	if exp == 0 {
+		return false
+	}
+	return time.Now().Unix() > exp
 }
 
 // Expire sets the expiration time for the Hash.
 // Returns false if the Hash is already expired or if ttl is negative.
 func (h *Hash) Expire(ttl int64) bool {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	if h.isExpired() || ttl < 0 {
+	if h.IsExpired() {
 		return false
 	}
-	h.expiresAt = time.Now().Unix() + ttl
+	if ttl < 0 {
+		return false
+	}
+	h.expiresAt.Store(time.Now().Unix() + ttl)
 	return true
 }
 
 // TTL returns the remaining time-to-live in seconds.
 // Returns 0 if the Hash has no expiration time.
 func (h *Hash) TTL() int64 {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	if h.expiresAt == 0 {
+	exp := h.expiresAt.Load()
+	if exp == 0 {
 		return 0
 	}
-	return h.expiresAt - time.Now().Unix()
+	return exp - time.Now().Unix()
 }
 
 // GetCopy returns a copy of the Hash.

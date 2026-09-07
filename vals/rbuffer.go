@@ -2,6 +2,7 @@ package vals
 
 import (
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -19,58 +20,52 @@ type RingBuffer[T intstr] struct {
 	len       int64
 	head      int64
 	tail      int64
-	expiresAt int64
+	expiresAt atomic.Int64
 }
 
 // NewRingBuffer creates a new RingBuffer with the given capacity.
 func NewRingBuffer[T intstr](cap int64) *RingBuffer[T] {
 	return &RingBuffer[T]{
-		mu:        sync.RWMutex{},
-		buf:       make([]T, cap),
-		cap:       cap,
-		len:       0,
-		head:      0,
-		tail:      0,
-		expiresAt: 0,
+		mu:   sync.RWMutex{},
+		buf:  make([]T, cap),
+		cap:  cap,
+		len:  0,
+		head: 0,
+		tail: 0,
 	}
-}
-
-func (rb *RingBuffer[T]) isExpired() bool {
-	if rb.expiresAt == 0 {
-		return false
-	}
-	return time.Now().Unix() > rb.expiresAt
 }
 
 // IsExpired returns true if the RingBuffer has an expiration time and is expired.
 // Returns false if the RingBuffer has no expiration time or is not yet expired.
 func (rb *RingBuffer[T]) IsExpired() bool {
-	rb.mu.RLock()
-	defer rb.mu.RUnlock()
-	return rb.isExpired()
+	exp := rb.expiresAt.Load()
+	if exp == 0 {
+		return false
+	}
+	return time.Now().Unix() > exp
 }
 
 // Expire sets the expiration time for the RingBuffer.
 // Returns false if the RingBuffer is already expired or if ttl is negative.
 func (rb *RingBuffer[T]) Expire(ttl int64) bool {
-	rb.mu.Lock()
-	defer rb.mu.Unlock()
-	if rb.isExpired() || ttl < 0 {
+	if rb.IsExpired() {
 		return false
 	}
-	rb.expiresAt = time.Now().Unix() + ttl
+	if ttl < 0 {
+		return false
+	}
+	rb.expiresAt.Store(time.Now().Unix() + ttl)
 	return true
 }
 
 // TTL returns the remaining time-to-live in seconds.
 // Returns 0 if the RingBuffer has no expiration time.
 func (rb *RingBuffer[T]) TTL() int64 {
-	rb.mu.RLock()
-	defer rb.mu.RUnlock()
-	if rb.expiresAt == 0 {
+	exp := rb.expiresAt.Load()
+	if exp == 0 {
 		return 0
 	}
-	return rb.expiresAt - time.Now().Unix()
+	return exp - time.Now().Unix()
 }
 
 // Push adds a value to the RingBuffer, overwriting the oldest element if full.

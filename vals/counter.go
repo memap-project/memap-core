@@ -1,7 +1,7 @@
 package vals
 
 import (
-	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -9,110 +9,96 @@ import (
 // If expiresAt is 0, the Counter has no expiration.
 // If limit is 0, the Counter has no upper limit.
 type Counter struct {
-	mu        sync.RWMutex
-	value     int64
-	limit     int64
-	expiresAt int64
+	value     atomic.Int64
+	limit     atomic.Int64
+	expiresAt atomic.Int64
 }
 
 // NewCounter creates a new Counter.
 func NewCounter() *Counter {
-	return &Counter{
-		mu:        sync.RWMutex{},
-		value:     0,
-		limit:     0,
-		expiresAt: 0,
-	}
-}
-
-func (c *Counter) isExpired() bool {
-	if c.expiresAt == 0 {
-		return false
-	}
-	return time.Now().Unix() > c.expiresAt
+	return &Counter{}
 }
 
 // IsExpired returns true if the Counter has an expiration time and is expired.
 // Returns false if the Counter has no expiration time or is not yet expired.
 func (c *Counter) IsExpired() bool {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.isExpired()
+	exp := c.expiresAt.Load()
+	if exp == 0 {
+		return false
+	}
+	return time.Now().Unix() > exp
 }
 
 // Expire sets the expiration time for the Counter.
 // Returns false if the Counter is already expired or if ttl is negative.
 func (c *Counter) Expire(ttl int64) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.isExpired() || ttl < 0 {
+	if c.IsExpired() {
 		return false
 	}
-	c.expiresAt = time.Now().Unix() + ttl
+	if ttl < 0 {
+		return false
+	}
+	c.expiresAt.Store(time.Now().Unix() + ttl)
 	return true
 }
 
 // TTL returns the remaining time-to-live in seconds.
 // Returns 0 if the Counter has no expiration time.
 func (c *Counter) TTL() int64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	if c.expiresAt == 0 {
+	exp := c.expiresAt.Load()
+	if exp == 0 {
 		return 0
 	}
-	return c.expiresAt - time.Now().Unix()
+	return exp - time.Now().Unix()
 }
 
 // SetLimit sets or updates the upper limit of the Counter.
 func (c *Counter) SetLimit(limit int64) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.limit = limit
+	c.limit.Store(limit)
 }
 
 // GetLimit returns the upper limit of the Counter.
 func (c *Counter) GetLimit() int64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.limit
+	return c.limit.Load()
 }
 
 // GetValue returns the current value of the Counter.
 func (c *Counter) GetValue() int64 {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return c.value
+	return c.value.Load()
 }
 
 // IncrBy increments the Counter value by alpha up to limit if set.
 // Returns true if the increment succeeded.
 // Returns false if the increment would exceed limit.
 func (c *Counter) IncrBy(alpha int64) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.limit > 0 && c.value+alpha > c.limit {
-		return false
+	for {
+		val := c.value.Load()
+		lim := c.limit.Load()
+		if lim > 0 && val+alpha > lim {
+			return false
+		}
+		if c.value.CompareAndSwap(val, val+alpha) {
+			return true
+		}
 	}
-	c.value += alpha
-	return true
 }
 
 // DecrBy decrements the Counter value by alpha down to 0.
 // Returns true if the decrement succeeded.
 // Returns false if the decrement would result in a negative value.
 func (c *Counter) DecrBy(alpha int64) bool {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if c.value-alpha >= 0 {
-		c.value -= alpha
-		return true
+	for {
+		val := c.value.Load()
+		if val-alpha < 0 {
+			return false
+		}
+		if c.value.CompareAndSwap(val, val-alpha) {
+			return true
+		}
 	}
-	return false
 }
 
 // Reset resets the Counter value to 0.
 func (c *Counter) Reset() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.value = 0
+	c.value.Store(0)
 }
