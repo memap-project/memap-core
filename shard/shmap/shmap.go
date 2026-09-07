@@ -1,8 +1,6 @@
 package shmap
 
 import (
-	"hash/fnv"
-
 	"github.com/memap-project/memap-core/shard"
 	"github.com/memap-project/memap-core/vals"
 )
@@ -27,10 +25,7 @@ func NewShardedMap(shardCount uint8) *ShardedMap {
 
 // getShard returns the shard corresponding to the given key based on FNV-1a hash.
 func (s *ShardedMap) getShard(key string) *shard.Shard[*vals.Item] {
-	h := fnv.New32a()
-	h.Write([]byte(key))
-	idx := h.Sum32() & uint32(s.shardCount-1)
-	return s.shards[idx]
+	return s.shards[shard.ShardIndex(key, s.shardCount)]
 }
 
 // Get retrieves the value of the key from the sharded map.

@@ -17,9 +17,17 @@ type Hash struct {
 // NewHash creates a new Hash.
 func NewHash() *Hash {
 	return &Hash{
+		mu:        sync.RWMutex{},
 		hash:      make(map[string]string, 8),
 		expiresAt: 0,
 	}
+}
+
+func (h *Hash) isExpired() bool {
+	if h.expiresAt == 0 {
+		return false
+	}
+	return time.Now().Unix() > h.expiresAt
 }
 
 // IsExpired returns true if the Hash has an expiration time and is expired.
@@ -27,10 +35,7 @@ func NewHash() *Hash {
 func (h *Hash) IsExpired() bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	if h.expiresAt == 0 {
-		return false
-	}
-	return time.Now().Unix() > h.expiresAt
+	return h.isExpired()
 }
 
 // Expire sets the expiration time for the Hash.
@@ -38,10 +43,7 @@ func (h *Hash) IsExpired() bool {
 func (h *Hash) Expire(ttl int64) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.IsExpired() {
-		return false
-	}
-	if ttl < 0 {
+	if h.isExpired() || ttl < 0 {
 		return false
 	}
 	h.expiresAt = time.Now().Unix() + ttl

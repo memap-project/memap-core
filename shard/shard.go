@@ -4,6 +4,31 @@ import (
 	"sync"
 )
 
+// FNV-1a 32-bit constants.
+const (
+	offset32 uint32 = 2166136261
+	prime32  uint32 = 16777619
+)
+
+// HashKey computes the 32-bit FNV-1a hash of a string key.
+func HashKey(key string) uint32 {
+	h := uint32(offset32)
+	for i := 0; i < len(key); i++ {
+		h ^= uint32(key[i])
+		h *= prime32
+	}
+	return h
+}
+
+// ShardIndex returns the shard index for the given key and shardCount.
+// shardCount must be a power of two.
+func ShardIndex(key string, shardCount uint8) uint32 {
+	if shardCount <= 1 {
+		return 0
+	}
+	return HashKey(key) & uint32(shardCount-1)
+}
+
 // Shard is a generic thread-safe map around default map.
 type Shard[V any] struct {
 	mu    sync.RWMutex

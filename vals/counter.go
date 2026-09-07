@@ -25,15 +25,19 @@ func NewCounter() *Counter {
 	}
 }
 
+func (c *Counter) isExpired() bool {
+	if c.expiresAt == 0 {
+		return false
+	}
+	return time.Now().Unix() > c.expiresAt
+}
+
 // IsExpired returns true if the Counter has an expiration time and is expired.
 // Returns false if the Counter has no expiration time or is not yet expired.
 func (c *Counter) IsExpired() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	if c.expiresAt == 0 {
-		return false
-	}
-	return time.Now().Unix() > c.expiresAt
+	return c.isExpired()
 }
 
 // Expire sets the expiration time for the Counter.
@@ -41,10 +45,7 @@ func (c *Counter) IsExpired() bool {
 func (c *Counter) Expire(ttl int64) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.IsExpired() {
-		return false
-	}
-	if ttl < 0 {
+	if c.isExpired() || ttl < 0 {
 		return false
 	}
 	c.expiresAt = time.Now().Unix() + ttl

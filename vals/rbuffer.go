@@ -35,15 +35,19 @@ func NewRingBuffer[T intstr](cap int64) *RingBuffer[T] {
 	}
 }
 
+func (rb *RingBuffer[T]) isExpired() bool {
+	if rb.expiresAt == 0 {
+		return false
+	}
+	return time.Now().Unix() > rb.expiresAt
+}
+
 // IsExpired returns true if the RingBuffer has an expiration time and is expired.
 // Returns false if the RingBuffer has no expiration time or is not yet expired.
 func (rb *RingBuffer[T]) IsExpired() bool {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
-	if rb.expiresAt == 0 {
-		return false
-	}
-	return time.Now().Unix() > rb.expiresAt
+	return rb.isExpired()
 }
 
 // Expire sets the expiration time for the RingBuffer.
@@ -51,10 +55,7 @@ func (rb *RingBuffer[T]) IsExpired() bool {
 func (rb *RingBuffer[T]) Expire(ttl int64) bool {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
-	if rb.IsExpired() {
-		return false
-	}
-	if ttl < 0 {
+	if rb.isExpired() || ttl < 0 {
 		return false
 	}
 	rb.expiresAt = time.Now().Unix() + ttl
