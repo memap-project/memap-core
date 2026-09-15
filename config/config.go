@@ -17,6 +17,7 @@ type ShardCounts struct {
 	Shhash    uint8 `yaml:"shhash"`
 	Shcounter uint8 `yaml:"shcounter"`
 	Shrbuffer uint8 `yaml:"shrbuffer"`
+	Shset     uint8 `yaml:"shset"`
 }
 
 // DefaultConfig returns the default configuration.
@@ -29,6 +30,7 @@ func DefaultConfig() Config {
 				Shhash:    8,
 				Shcounter: 8,
 				Shrbuffer: 8,
+				Shset:     8,
 			},
 		},
 	}

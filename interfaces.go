@@ -65,6 +65,17 @@ type RingBufferStore interface {
 	BTTL(key string) (int64, error)
 }
 
+// SetStore defines set operations.
+type SetStore interface {
+	SAdd(key, member string, ttl int64) error
+	SRemove(key, member string) error
+	SIsMember(key, member string) (bool, error)
+	SCard(key string) (int64, error)
+	SMembers(key string) ([]string, error)
+	SExpire(key string, ttl int64) error
+	STTL(key string) (int64, error)
+}
+
 // NamespaceOps defines namespace management operations and scoping.
 type NamespaceOps interface {
 	CreateNamespace(name string) error

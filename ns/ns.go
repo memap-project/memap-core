@@ -8,6 +8,7 @@ import (
 	"github.com/memap-project/memap-core/shard/shhash"
 	"github.com/memap-project/memap-core/shard/shmap"
 	"github.com/memap-project/memap-core/shard/shrbuffer"
+	"github.com/memap-project/memap-core/shard/shset"
 )
 
 // Namespace represents an isolated container storing maps, hashes, counters, and ring buffers.
@@ -18,6 +19,7 @@ type Namespace struct {
 	shhash    *shhash.ShardedHash
 	shcounter *shcounter.ShardedCounter
 	shrbuffer *shrbuffer.ShardedRingBuffer
+	shset     *shset.ShardedSet
 }
 
 // NewNamespace creates a new Namespace with initialized storage components.
@@ -29,6 +31,7 @@ func NewNamespace(cfg *config.NamespaceConfig) *Namespace {
 		shhash:    shhash.NewShardedHash(cfg.ShardCounts.Shhash),
 		shcounter: shcounter.NewShardedCounter(cfg.ShardCounts.Shcounter),
 		shrbuffer: shrbuffer.NewShardedRingBuffer(cfg.ShardCounts.Shrbuffer),
+		shset:     shset.NewShardedSet(cfg.ShardCounts.Shset),
 	}
 }
 
@@ -38,6 +41,7 @@ func (n *Namespace) CleanExpired() {
 	n.shhash.CleanExpired()
 	n.shcounter.CleanExpired()
 	n.shrbuffer.CleanExpired()
+	n.shset.CleanExpired()
 }
 
 // Flush removes all keys across all storage components in the namespace.
@@ -46,4 +50,5 @@ func (n *Namespace) Flush() {
 	n.shhash.Flush()
 	n.shcounter.Flush()
 	n.shrbuffer.Flush()
+	n.shset.Flush()
 }
