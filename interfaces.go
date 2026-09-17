@@ -37,7 +37,6 @@ type HashStore interface {
 
 // CounterStore defines counter operations.
 type CounterStore interface {
-	CInit(key string, limit, ttl int64) error
 	CSLimit(key string, limit int64) error
 	CGLimit(key string) (int64, error)
 	CGet(key string) (int64, error)

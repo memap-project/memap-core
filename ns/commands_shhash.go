@@ -83,15 +83,24 @@ func (nm *NamespaceManager) HExpire(ns, key string, ttl int64) error {
 // Returns -1 if the hash has no expiration time.
 // Returns -2 if the hash does not exist or is expired.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
+// Returns [ErrKeyNotFound] if the hash does not exist or is expired.
 func (nm *NamespaceManager) HTTL(ns, key string) (int64, error) {
 	if ns == "" {
-		return nm.defaultNs.shhash.TTL(key), nil
+		ttl := nm.defaultNs.shhash.TTL(key)
+		if ttl == -2 {
+			return ttl, ErrKeyNotFound
+		}
+		return ttl, nil
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return 0, ErrNamespaceNotFound
 	}
-	return n.shhash.TTL(key), nil
+	ttl := n.shhash.TTL(key)
+	if ttl == -2 {
+		return ttl, ErrKeyNotFound
+	}
+	return ttl, nil
 }
 
 // HExists checks whether an unexpired hash exists for the given key in the specified namespace.

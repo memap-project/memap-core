@@ -28,39 +28,6 @@ func (s *ShardedSet) getShard(key string) *shard.Shard[*vals.Set] {
 	return s.shards[shard.ShardIndex(key, s.shardCount)]
 }
 
-// Expire sets the expiration time for the Set of the given key.
-// Returns true if the Set exists and expiration was set.
-// Returns false if the Set does not exist or is already expired.
-func (s *ShardedSet) Expire(key string, ttl int64) bool {
-	ok := s.getShard(key).Update(key, func(h *vals.Set) bool {
-		if h.IsExpired() {
-			return false
-		}
-		h.Expire(ttl)
-		return true
-	})
-	return ok
-}
-
-// TTL returns the time-to-live of the Set for the given key in seconds.
-// Returns -1 if the Set exists and has no expiration time.
-// Returns -2 if the Set does not exist or is expired.
-func (s *ShardedSet) TTL(key string) int64 {
-	sh := s.getShard(key)
-	set, ok := sh.Get(key)
-	if !ok {
-		return -2
-	}
-	if set.IsExpired() {
-		sh.Delete(key)
-		return -2
-	}
-	if set.TTL() == 0 {
-		return -1
-	}
-	return set.TTL()
-}
-
 // Add adds a member to the Set for the given key.
 // If the Set does not exist or is expired, a new Set is created.
 func (s *ShardedSet) Add(key string, member string, ttl int64) {
@@ -128,6 +95,39 @@ func (s *ShardedSet) Members(key string) ([]string, bool) {
 		return []string{}, false
 	}
 	return set.Members(), true
+}
+
+// Expire sets the expiration time for the Set of the given key.
+// Returns true if the Set exists and expiration was set.
+// Returns false if the Set does not exist or is already expired.
+func (s *ShardedSet) Expire(key string, ttl int64) bool {
+	ok := s.getShard(key).Update(key, func(h *vals.Set) bool {
+		if h.IsExpired() {
+			return false
+		}
+		h.Expire(ttl)
+		return true
+	})
+	return ok
+}
+
+// TTL returns the time-to-live of the Set for the given key in seconds.
+// Returns -1 if the Set exists and has no expiration time.
+// Returns -2 if the Set does not exist or is expired.
+func (s *ShardedSet) TTL(key string) int64 {
+	sh := s.getShard(key)
+	set, ok := sh.Get(key)
+	if !ok {
+		return -2
+	}
+	if set.IsExpired() {
+		sh.Delete(key)
+		return -2
+	}
+	if set.TTL() == 0 {
+		return -1
+	}
+	return set.TTL()
 }
 
 // CleanExpired removes all expired sets across all shards.

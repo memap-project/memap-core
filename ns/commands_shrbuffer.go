@@ -250,8 +250,8 @@ func (nm *NamespaceManager) BExpire(ns, key string, ttl int64) error {
 // Returns [ErrKeyNotFound] if the ring buffer does not exist or is expired.
 func (nm *NamespaceManager) BTTL(ns, key string) (int64, error) {
 	if ns == "" {
-		ttl, ok := nm.defaultNs.shrbuffer.TTL(key)
-		if !ok {
+		ttl := nm.defaultNs.shrbuffer.TTL(key)
+		if ttl == -2 {
 			return ttl, ErrKeyNotFound
 		}
 		return ttl, nil
@@ -260,8 +260,8 @@ func (nm *NamespaceManager) BTTL(ns, key string) (int64, error) {
 	if !exists {
 		return 0, ErrNamespaceNotFound
 	}
-	ttl, ok := n.shrbuffer.TTL(key)
-	if !ok {
+	ttl := n.shrbuffer.TTL(key)
+	if ttl == -2 {
 		return ttl, ErrKeyNotFound
 	}
 	return ttl, nil

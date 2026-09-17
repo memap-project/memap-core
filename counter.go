@@ -1,9 +1,5 @@
 package memap
 
-// CInit initializes a counter with the given limit and optional TTL in the default namespace.
-func (c *Cache) CInit(key string, limit, ttl int64) error {
-	return c.manager.CInit("", key, limit, ttl)
-}
 
 // CSLimit sets or updates the upper limit of a counter in the default namespace.
 func (c *Cache) CSLimit(key string, limit int64) error {
@@ -45,10 +41,6 @@ func (c *Cache) CDecrBy(key string, alpha int64) (int64, error) {
 	return c.manager.CDecrBy("", key, alpha)
 }
 
-// CInit initializes a counter with the given limit and optional TTL in this namespace.
-func (ctx *Namespace) CInit(key string, limit, ttl int64) error {
-	return ctx.manager.CInit(ctx.name, key, limit, ttl)
-}
 
 // CSLimit sets or updates the upper limit of a counter in this namespace.
 func (ctx *Namespace) CSLimit(key string, limit int64) error {

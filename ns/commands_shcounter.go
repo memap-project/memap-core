@@ -1,39 +1,13 @@
 package ns
 
-// CInit initializes a counter with the given limit and optional TTL in the specified namespace.
-// If ns is empty, the default namespace is used.
-// Returns [ErrNamespaceNotFound] if the namespace does not exist.
-// Returns [ErrKeyAlreadyExists] if a counter already exists for the given key.
-func (nm *NamespaceManager) CInit(ns, key string, limit, ttl int64) error {
-	if ns == "" {
-		ok := nm.defaultNs.shcounter.Init(key, limit, ttl)
-		if !ok {
-			return ErrKeyAlreadyExists
-		}
-		return nil
-	}
-
-	n, exists := nm.GetNs(ns)
-	if !exists {
-		return ErrNamespaceNotFound
-	}
-	ok := n.shcounter.Init(key, limit, ttl)
-	if !ok {
-		return ErrKeyAlreadyExists
-	}
-	return nil
-}
 
 // CSLimit sets or updates the upper limit of a counter in the specified namespace.
+// Initializes the counter if it does not exist or is expired.
 // If ns is empty, the default namespace is used.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
-// Returns [ErrKeyNotFound] if the counter does not exist or is expired.
 func (nm *NamespaceManager) CSLimit(ns, key string, limit int64) error {
 	if ns == "" {
-		ok := nm.defaultNs.shcounter.SetLimit(key, limit)
-		if !ok {
-			return ErrKeyNotFound
-		}
+		nm.defaultNs.shcounter.SetLimit(key, limit)
 		return nil
 	}
 
@@ -41,10 +15,7 @@ func (nm *NamespaceManager) CSLimit(ns, key string, limit int64) error {
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	ok := n.shcounter.SetLimit(key, limit)
-	if !ok {
-		return ErrKeyNotFound
-	}
+	n.shcounter.SetLimit(key, limit)
 	return nil
 }
 
@@ -127,7 +98,10 @@ func (nm *NamespaceManager) CExpire(ns, key string, ttl int64) error {
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	n.shcounter.Expire(key, ttl)
+	ok := n.shcounter.Expire(key, ttl)
+	if !ok {
+		return ErrKeyNotFound
+	}
 	return nil
 }
 
@@ -138,27 +112,27 @@ func (nm *NamespaceManager) CExpire(ns, key string, ttl int64) error {
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) CTTL(ns, key string) (int64, error) {
 	if ns == "" {
-		count, ok := nm.defaultNs.shcounter.TTL(key)
-		if !ok {
-			return count, ErrKeyNotFound
+		ttl := nm.defaultNs.shcounter.TTL(key)
+		if ttl == -2 {
+			return ttl, ErrKeyNotFound
 		}
-		return count, nil
+		return ttl, nil
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return -2, ErrNamespaceNotFound
 	}
-	count, ok := n.shcounter.TTL(key)
-	if !ok {
-		return count, ErrKeyNotFound
+	ttl := n.shcounter.TTL(key)
+	if ttl == -2 {
+		return ttl, ErrKeyNotFound
 	}
-	return count, nil
+	return ttl, nil
 }
 
 // CIncrBy increments the counter by alpha in the specified namespace.
+// Initializes the counter if it does not exist or is expired.
 // If ns is empty, the default namespace is used.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
-// Returns [ErrKeyNotFound] if the counter does not exist or is expired.
 // Returns [ErrLimitExceeded] if the increment exceeds limit.
 func (nm *NamespaceManager) CIncrBy(ns, key string, alpha int64) (int64, error) {
 	if ns == "" {

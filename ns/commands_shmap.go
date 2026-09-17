@@ -90,12 +90,19 @@ func (nm *NamespaceManager) Expire(ns, key string, ttl int64) error {
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) TTL(ns, key string) (int64, error) {
 	if ns == "" {
-		return nm.defaultNs.shmap.TTL(key), nil
+		ttl := nm.defaultNs.shmap.TTL(key)
+		if ttl == -2 {
+			return ttl, ErrKeyNotFound
+		}
+		return ttl, nil
 	}
-
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return 0, ErrNamespaceNotFound
 	}
-	return n.shmap.TTL(key), nil
+	ttl := n.shmap.TTL(key)
+	if ttl == -2 {
+		return ttl, ErrKeyNotFound
+	}
+	return ttl, nil
 }

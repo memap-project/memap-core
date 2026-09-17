@@ -49,6 +49,7 @@ func (nm *NamespaceManager) SIsMember(ns, key, member string) (bool, error) {
 // SCard returns the number of members in the set in the specified namespace.
 // If ns is empty, the default namespace is used.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
+// Returns [ErrKeyNotFound] if the set does not exist or is expired.
 func (nm *NamespaceManager) SCard(ns, key string) (int64, error) {
 	if ns == "" {
 		len, ok := nm.defaultNs.shset.Card(key)
@@ -68,6 +69,10 @@ func (nm *NamespaceManager) SCard(ns, key string) (int64, error) {
 	return len, nil
 }
 
+// SMembers returns all members of the set in the specified namespace.
+// If ns is empty, the default namespace is used.
+// Returns [ErrNamespaceNotFound] if the namespace does not exist.
+// Returns [ErrKeyNotFound] if the set does not exist or is expired.
 func (nm *NamespaceManager) SMembers(ns, key string) ([]string, error) {
 	if ns == "" {
 		members, ok := nm.defaultNs.shset.Members(key)
@@ -87,6 +92,10 @@ func (nm *NamespaceManager) SMembers(ns, key string) ([]string, error) {
 	return members, nil
 }
 
+// SExpire sets the expiration time for the set of the given key in the specified namespace.
+// If ns is empty, the default namespace is used.
+// Returns [ErrNamespaceNotFound] if the namespace does not exist.
+// Returns [ErrKeyNotFound] if the set does not exist or is expired.
 func (nm *NamespaceManager) SExpire(ns, key string, ttl int64) error {
 	if ns == "" {
 		ok := nm.defaultNs.shset.Expire(key, ttl)
@@ -106,13 +115,27 @@ func (nm *NamespaceManager) SExpire(ns, key string, ttl int64) error {
 	return nil
 }
 
+// STTL returns the time-to-live of the set for the given key in seconds from the specified namespace.
+// If ns is empty, the default namespace is used.
+// Returns -1 if the set has no expiration time.
+// Returns -2 if the set does not exist or is expired.
+// Returns [ErrNamespaceNotFound] if the namespace does not exist.
+// Returns [ErrKeyNotFound] if the set does not exist or is expired.
 func (nm *NamespaceManager) STTL(ns, key string) (int64, error) {
 	if ns == "" {
-		return nm.defaultNs.shset.TTL(key), nil
+		ttl := nm.defaultNs.shset.TTL(key)
+		if ttl == -2 {
+			return ttl, ErrKeyNotFound
+		}
+		return ttl, nil
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return 0, ErrNamespaceNotFound
 	}
-	return n.shset.TTL(key), nil
+	ttl := n.shset.TTL(key)
+	if ttl == -2 {
+		return ttl, ErrKeyNotFound
+	}
+	return ttl, nil
 }

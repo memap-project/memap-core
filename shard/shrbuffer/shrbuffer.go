@@ -24,15 +24,15 @@ func NewShardedRingBuffer(shardCount uint8) *ShardedRingBuffer {
 }
 
 // getShard returns the shard corresponding to the given key based on FNV-1a hash.
-func (s *ShardedRingBuffer) getShard(key string) *shard.Shard[*vals.RingBuffer[string]] {
-	return s.shards[shard.ShardIndex(key, s.shardCount)]
+func (shrb *ShardedRingBuffer) getShard(key string) *shard.Shard[*vals.RingBuffer[string]] {
+	return shrb.shards[shard.ShardIndex(key, shrb.shardCount)]
 }
 
 // Init initializes a new ring buffer with the given key, capacity, and optional TTL.
 // Returns true if the ring buffer was created.
 // Returns false if a ring buffer already exists for the given key.
-func (s *ShardedRingBuffer) Init(key string, cap, ttl int64) bool {
-	rb, ok := s.getShard(key).GetOrInit(key, func() *vals.RingBuffer[string] {
+func (shrb *ShardedRingBuffer) Init(key string, cap, ttl int64) bool {
+	rb, ok := shrb.getShard(key).GetOrInit(key, func() *vals.RingBuffer[string] {
 		return vals.NewRingBuffer[string](cap)
 	})
 	if ok {
@@ -44,8 +44,8 @@ func (s *ShardedRingBuffer) Init(key string, cap, ttl int64) bool {
 
 // Push adds a value to the ring buffer for the given key.
 // Returns false if the ring buffer does not exist or is expired.
-func (s *ShardedRingBuffer) Push(key, value string) bool {
-	sh := s.getShard(key)
+func (shrb *ShardedRingBuffer) Push(key, value string) bool {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
 		return false
@@ -61,8 +61,8 @@ func (s *ShardedRingBuffer) Push(key, value string) bool {
 // Pop removes and returns the value at the head of the ring buffer.
 // Returns value and StatusSuccess if popped.
 // Returns empty string and failure Status if the ring buffer does not exist, is expired, or is empty.
-func (s *ShardedRingBuffer) Pop(key string) (string, shard.Status) {
-	sh := s.getShard(key)
+func (shrb *ShardedRingBuffer) Pop(key string) (string, shard.Status) {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
 		return "", shard.StatusNotFound
@@ -80,8 +80,8 @@ func (s *ShardedRingBuffer) Pop(key string) (string, shard.Status) {
 // At returns the value at the specified index from the ring buffer.
 // Returns value and StatusSuccess if found.
 // Returns empty string and failure Status if the ring buffer does not exist, is expired, or index is out of bounds.
-func (s *ShardedRingBuffer) At(key string, index int64) (string, shard.Status) {
-	sh := s.getShard(key)
+func (shrb *ShardedRingBuffer) At(key string, index int64) (string, shard.Status) {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
 		return "", shard.StatusNotFound
@@ -97,16 +97,16 @@ func (s *ShardedRingBuffer) At(key string, index int64) (string, shard.Status) {
 }
 
 // Slice returns all elements currently in the ring buffer in logical order (oldest to newest).
-// Returns nil and false if the ring buffer does not exist or is expired.
-func (s *ShardedRingBuffer) Slice(key string) ([]string, bool) {
-	sh := s.getShard(key)
+// Returns empty slice and false if the ring buffer does not exist or is expired.
+func (shrb *ShardedRingBuffer) Slice(key string) ([]string, bool) {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
-		return nil, false
+		return []string{}, false
 	}
 	if rb.IsExpired() {
 		sh.Delete(key)
-		return nil, false
+		return []string{}, false
 	}
 	return rb.Slice(), true
 }
@@ -114,8 +114,8 @@ func (s *ShardedRingBuffer) Slice(key string) ([]string, bool) {
 // Peek returns the oldest value at the head of the ring buffer without removing it.
 // Returns value and StatusSuccess if found.
 // Returns empty string and failure Status if the ring buffer does not exist, is expired, or is empty.
-func (s *ShardedRingBuffer) Peek(key string) (string, shard.Status) {
-	sh := s.getShard(key)
+func (shrb *ShardedRingBuffer) Peek(key string) (string, shard.Status) {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
 		return "", shard.StatusNotFound
@@ -133,8 +133,8 @@ func (s *ShardedRingBuffer) Peek(key string) (string, shard.Status) {
 // Back returns the newest value at the tail of the ring buffer without removing it.
 // Returns value and StatusSuccess if found.
 // Returns empty string and failure Status if the ring buffer does not exist, is expired, or is empty.
-func (s *ShardedRingBuffer) Back(key string) (string, shard.Status) {
-	sh := s.getShard(key)
+func (shrb *ShardedRingBuffer) Back(key string) (string, shard.Status) {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
 		return "", shard.StatusNotFound
@@ -151,8 +151,8 @@ func (s *ShardedRingBuffer) Back(key string) (string, shard.Status) {
 
 // Cap returns the capacity of the ring buffer for the given key.
 // Returns 0 and false if the ring buffer does not exist or is expired.
-func (s *ShardedRingBuffer) Cap(key string) (int64, bool) {
-	sh := s.getShard(key)
+func (shrb *ShardedRingBuffer) Cap(key string) (int64, bool) {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
 		return 0, false
@@ -166,8 +166,8 @@ func (s *ShardedRingBuffer) Cap(key string) (int64, bool) {
 
 // Len returns the number of elements in the ring buffer for the given key.
 // Returns 0 and false if the ring buffer does not exist or is expired.
-func (s *ShardedRingBuffer) Len(key string) (int64, bool) {
-	sh := s.getShard(key)
+func (shrb *ShardedRingBuffer) Len(key string) (int64, bool) {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
 		return 0, false
@@ -181,8 +181,8 @@ func (s *ShardedRingBuffer) Len(key string) (int64, bool) {
 
 // Reset resets the ring buffer for the given key to an empty state.
 // Returns false if the ring buffer does not exist or is expired.
-func (s *ShardedRingBuffer) Reset(key string) bool {
-	sh := s.getShard(key)
+func (shrb *ShardedRingBuffer) Reset(key string) bool {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
 	if !ok {
 		return false
@@ -196,40 +196,46 @@ func (s *ShardedRingBuffer) Reset(key string) bool {
 }
 
 // Delete removes the ring buffer for the given key.
-func (s *ShardedRingBuffer) Delete(key string) {
-	s.getShard(key).Delete(key)
+func (shrb *ShardedRingBuffer) Delete(key string) {
+	shrb.getShard(key).Delete(key)
 }
 
 // Expire sets the expiration time for the ring buffer of the given key.
 // Returns true if the ring buffer exists and expiration was set.
 // Returns false if the ring buffer does not exist or is already expired.
-func (s *ShardedRingBuffer) Expire(key string, ttl int64) bool {
-	return s.getShard(key).Update(key, func(rb *vals.RingBuffer[string]) bool {
+func (shrb *ShardedRingBuffer) Expire(key string, ttl int64) bool {
+	ok := shrb.getShard(key).Update(key, func(rb *vals.RingBuffer[string]) bool {
 		if rb.IsExpired() {
 			return false
 		}
-		return rb.Expire(ttl)
+		rb.Expire(ttl)
+		return true
 	})
+	return ok
 }
 
 // TTL returns the remaining time-to-live of the ring buffer for the given key in seconds.
-// Returns -1 and true if the ring buffer exists and has no expiration time.
-// Returns -2 and false if the ring buffer does not exist or is expired.
-func (s *ShardedRingBuffer) TTL(key string) (int64, bool) {
-	sh := s.getShard(key)
+// Returns -1 if the ring buffer exists and has no expiration time.
+// Returns -2 if the ring buffer does not exist or is expired.
+func (shrb *ShardedRingBuffer) TTL(key string) int64 {
+	sh := shrb.getShard(key)
 	rb, ok := sh.Get(key)
-	if !ok || rb.IsExpired() {
-		return -2, false
+	if !ok {
+		return -2
+	}
+	if rb.IsExpired() {
+		sh.Delete(key)
+		return -2
 	}
 	if rb.TTL() == 0 {
-		return -1, true
+		return -1
 	}
-	return rb.TTL(), true
+	return rb.TTL()
 }
 
 // CleanExpired removes all expired ring buffers across all shards.
-func (s *ShardedRingBuffer) CleanExpired() {
-	for _, shard := range s.shards {
+func (shrb *ShardedRingBuffer) CleanExpired() {
+	for _, shard := range shrb.shards {
 		shard.Clean(func(key string, rb *vals.RingBuffer[string]) bool {
 			return rb.IsExpired()
 		})
@@ -237,8 +243,8 @@ func (s *ShardedRingBuffer) CleanExpired() {
 }
 
 // Flush removes all ring buffers across all shards.
-func (s *ShardedRingBuffer) Flush() {
-	for _, shard := range s.shards {
+func (shrb *ShardedRingBuffer) Flush() {
+	for _, shard := range shrb.shards {
 		shard.Flush()
 	}
 }
