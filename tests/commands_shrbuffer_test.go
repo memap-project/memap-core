@@ -1,4 +1,4 @@
-package ns_test
+package tests
 
 import (
 	"testing"
