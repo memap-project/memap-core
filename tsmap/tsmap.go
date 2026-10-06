@@ -27,11 +27,7 @@ func (tm *TypedSyncMap[K, V]) Store(key K, value V) {
 // Returns true if the value was loaded, false if stored.
 func (tm *TypedSyncMap[K, V]) LoadOrStore(key K, value V) (V, bool) {
 	actual, loaded := tm.m.LoadOrStore(key, value)
-	if !loaded {
-		var zero V
-		return zero, false
-	}
-	return actual.(V), true
+	return actual.(V), loaded
 }
 
 // Delete removes the key and its value from the map.
