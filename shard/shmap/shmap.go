@@ -65,8 +65,7 @@ func (shm *ShardedMap) Expire(key string, ttl int64) bool {
 		if i.IsExpired() {
 			return false
 		}
-		i.Expire(ttl)
-		return true
+		return i.Expire(ttl)
 	})
 	return ok
 }

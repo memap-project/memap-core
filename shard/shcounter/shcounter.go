@@ -28,7 +28,6 @@ func (shc *ShardedCounter) getShard(key string) *shard.Shard[*vals.Counter] {
 	return shc.shards[shard.ShardIndex(key, shc.shardCount)]
 }
 
-
 // SetLimit sets or updates the upper limit for the counter of the given key.
 // Initializes the counter if it does not exist or is expired.
 func (shc *ShardedCounter) SetLimit(key string, limit int64) {
@@ -37,6 +36,9 @@ func (shc *ShardedCounter) SetLimit(key string, limit int64) {
 	if ok && c.IsExpired() {
 		c = vals.NewCounter()
 		sh.Set(key, c)
+	}
+	if limit < 0 {
+		return
 	}
 	c.SetLimit(limit)
 }
@@ -84,8 +86,7 @@ func (shc *ShardedCounter) Expire(key string, ttl int64) bool {
 		if c.IsExpired() {
 			return false
 		}
-		c.Expire(ttl)
-		return true
+		return c.Expire(ttl)
 	})
 	return ok
 }

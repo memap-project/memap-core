@@ -38,7 +38,9 @@ func (shrb *ShardedRingBuffer) Init(key string, cap, ttl int64) bool {
 	if ok {
 		return false
 	}
-	rb.Expire(ttl)
+	if ttl > 0 {
+		rb.Expire(ttl)
+	}
 	return true
 }
 
@@ -208,8 +210,7 @@ func (shrb *ShardedRingBuffer) Expire(key string, ttl int64) bool {
 		if rb.IsExpired() {
 			return false
 		}
-		rb.Expire(ttl)
-		return true
+		return rb.Expire(ttl)
 	})
 	return ok
 }

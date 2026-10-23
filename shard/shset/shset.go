@@ -32,15 +32,13 @@ func (s *ShardedSet) getShard(key string) *shard.Shard[*vals.Set] {
 // If the Set does not exist or is expired, a new Set is created.
 func (s *ShardedSet) Add(key string, member string, ttl int64) {
 	sh := s.getShard(key)
-	set, ok := sh.GetOrInit(key, func() *vals.Set {
-		return vals.NewSet()
-	})
-	if ok {
-		ok := set.IsExpired()
-		if ok {
-			sh.Delete(key)
-			sh.Set(key, vals.NewSet())
-		}
+	set, ok := sh.GetOrInit(key, vals.NewSet)
+	if ok && set.IsExpired() {
+		set = vals.NewSet()
+		sh.Set(key, set)
+	}
+	if ttl > 0 {
+		set.Expire(ttl)
 	}
 	set.Add(member)
 }
@@ -105,8 +103,7 @@ func (s *ShardedSet) Expire(key string, ttl int64) bool {
 		if h.IsExpired() {
 			return false
 		}
-		h.Expire(ttl)
-		return true
+		return h.Expire(ttl)
 	})
 	return ok
 }

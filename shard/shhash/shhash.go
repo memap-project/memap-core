@@ -53,7 +53,9 @@ func (shh *ShardedHash) Set(key string, ttl int64) {
 		hash = vals.NewHash()
 		sh.Set(key, hash)
 	}
-	hash.Expire(ttl)
+	if ttl > 0 {
+		hash.Expire(ttl)
+	}
 }
 
 // Delete removes the hash for the given key.
@@ -69,8 +71,7 @@ func (shh *ShardedHash) Expire(key string, ttl int64) bool {
 		if h.IsExpired() {
 			return false
 		}
-		h.Expire(ttl)
-		return true
+		return h.Expire(ttl)
 	})
 	return ok
 }
