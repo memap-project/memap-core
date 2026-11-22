@@ -33,12 +33,30 @@ var (
 )
 
 // New creates and starts a new Cache instance with optional configuration.
+// Any unset or invalid fields in the provided config are normalized to safe defaults.
+// For strict configuration validation, use NewWithConfig.
 func New(cfg ...config.Config) *Cache {
 	c := config.DefaultConfig()
 	if len(cfg) > 0 {
-		c = cfg[0]
+		c = cfg[0].Normalize()
 	}
 
+	return newCache(c)
+}
+
+// NewWithConfig validates cfg strictly and creates and starts a new Cache instance.
+// Returns an error if the configuration is invalid.
+func NewWithConfig(cfg config.Config) (*Cache, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	if cfg.Namespace.MaxRingBufferCapacity == 0 {
+		cfg.Namespace.MaxRingBufferCapacity = config.DefaultMaxRingBufferCapacity
+	}
+	return newCache(cfg), nil
+}
+
+func newCache(c config.Config) *Cache {
 	manager := ns.NewNamespaceManager(&c.Namespace)
 	cleaner := clean.NewCleaner(context.Background(), c.CleanerInterval, manager.CleanExpired)
 	cleaner.Start()

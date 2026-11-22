@@ -1,6 +1,8 @@
 package tests
 
 import (
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -154,4 +156,51 @@ func Test_CleanExpired(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "v", val)
 	})
+}
+
+func Test_NewNamespaceManager_NilConfig(t *testing.T) {
+	nm := NewNamespaceManager(nil)
+	require.NotNil(t, nm)
+	require.NoError(t, nm.Set("", "k", "v", 0))
+	val, err := nm.Get("", "k")
+	require.NoError(t, err)
+	assert.Equal(t, "v", val)
+}
+
+func Test_Erase_ConcurrentSafety(t *testing.T) {
+	nm := newTestManager()
+	const workers = 10
+	const ops = 300
+
+	var wg sync.WaitGroup
+	wg.Add(workers + 2)
+
+	for g := range workers {
+		go func(id int) {
+			defer wg.Done()
+			name := fmt.Sprintf("ns_%d", id%4)
+			for i := range ops {
+				_ = nm.Create(name)
+				_ = nm.Set(name, "k", "v", 1)
+				_, _ = nm.Get(name, "k")
+				if i%15 == 0 {
+					_ = nm.Drop(name)
+				}
+				if i%20 == 0 {
+					nm.CleanExpired()
+				}
+			}
+		}(g)
+	}
+
+	for range 2 {
+		go func() {
+			defer wg.Done()
+			for range ops / 3 {
+				nm.Erase()
+			}
+		}()
+	}
+
+	wg.Wait()
 }

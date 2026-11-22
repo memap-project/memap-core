@@ -12,7 +12,9 @@ type ShardedHash struct {
 }
 
 // NewShardedHash creates a new ShardedHash with the given shard count.
+// shardCount is normalized to a power of two in [1, 128].
 func NewShardedHash(shardCount uint8) *ShardedHash {
+	shardCount = shard.NormalizeShardCount(shardCount)
 	shards := make([]*shard.Shard[*vals.Hash], shardCount)
 	for i := range shards {
 		shards[i] = shard.NewShard[*vals.Hash]()

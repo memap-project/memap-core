@@ -12,7 +12,9 @@ type ShardedMap struct {
 }
 
 // NewShardedMap creates a new ShardedMap with the given shard count.
+// shardCount is normalized to a power of two in [1, 128].
 func NewShardedMap(shardCount uint8) *ShardedMap {
+	shardCount = shard.NormalizeShardCount(shardCount)
 	shards := make([]*shard.Shard[*vals.Item], shardCount)
 	for i := range shards {
 		shards[i] = shard.NewShard[*vals.Item]()

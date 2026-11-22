@@ -3,24 +3,19 @@ package ns
 // BInit initializes a ring buffer with the given capacity and optional TTL in the specified namespace.
 // If ns is empty, the default namespace is used.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
+// Returns [ErrInvalidCapacity] if capacity is <= 0 or exceeds the configured max capacity.
 // Returns [ErrKeyAlreadyExists] if a ring buffer already exists for the given key.
 func (nm *NamespaceManager) BInit(ns, key string, capacity, ttl int64) error {
 	if ns == "" {
-		ok := nm.defaultNs.shrbuffer.Init(key, capacity, ttl)
-		if !ok {
-			return ErrKeyAlreadyExists
-		}
-		return nil
+		status := nm.defaultNs.shrbuffer.Init(key, capacity, ttl)
+		return statusToError(status)
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	ok := n.shrbuffer.Init(key, capacity, ttl)
-	if !ok {
-		return ErrKeyAlreadyExists
-	}
-	return nil
+	status := n.shrbuffer.Init(key, capacity, ttl)
+	return statusToError(status)
 }
 
 // BPush pushes a value to the ring buffer in the specified namespace.

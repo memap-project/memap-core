@@ -42,6 +42,13 @@ func Test_BInit(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(8), capVal)
 	})
+
+	t.Run("invalid capacity returns ErrInvalidCapacity", func(t *testing.T) {
+		nm := newTestManager()
+		require.ErrorIs(t, nm.BInit("", "neg", -1, 0), ErrInvalidCapacity)
+		require.ErrorIs(t, nm.BInit("", "zero", 0, 0), ErrInvalidCapacity)
+		require.ErrorIs(t, nm.BInit("", "huge", 1<<30, 0), ErrInvalidCapacity)
+	})
 }
 
 func Test_BPush_and_BPop(t *testing.T) {

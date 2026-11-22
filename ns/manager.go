@@ -1,7 +1,7 @@
 package ns
 
 import (
-	"sync"
+	"sync/atomic"
 
 	"github.com/memap-project/memap-core/config"
 	"github.com/memap-project/memap-core/tsmap"
@@ -9,19 +9,24 @@ import (
 
 // NamespaceManager manages multiple isolated namespaces and a default namespace.
 type NamespaceManager struct {
-	mu         sync.RWMutex
-	cfg        *config.NamespaceConfig
-	namespaces tsmap.TypedSyncMap[string, *Namespace]
+	cfg        config.NamespaceConfig
+	namespaces atomic.Pointer[tsmap.TypedSyncMap[string, *Namespace]]
 	defaultNs  *Namespace
 }
 
 // NewNamespaceManager creates a new NamespaceManager with an initialized default namespace.
+// If cfg is nil, default namespace configuration is used.
 func NewNamespaceManager(cfg *config.NamespaceConfig) *NamespaceManager {
-	defaultNs := NewNamespace(cfg)
-	return &NamespaceManager{
-		mu:         sync.RWMutex{},
-		cfg:        cfg,
-		namespaces: tsmap.TypedSyncMap[string, *Namespace]{},
-		defaultNs:  defaultNs,
+	var nsCfg config.NamespaceConfig
+	if cfg == nil {
+		nsCfg = config.DefaultConfig().Namespace
+	} else {
+		nsCfg = *cfg
 	}
+	nm := &NamespaceManager{
+		cfg:       nsCfg,
+		defaultNs: NewNamespace(&nsCfg),
+	}
+	nm.namespaces.Store(&tsmap.TypedSyncMap[string, *Namespace]{})
+	return nm
 }

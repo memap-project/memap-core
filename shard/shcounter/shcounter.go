@@ -12,7 +12,9 @@ type ShardedCounter struct {
 }
 
 // NewShardedCounter creates a new ShardedCounter with the given shard count.
+// shardCount is normalized to a power of two in [1, 128].
 func NewShardedCounter(shardCount uint8) *ShardedCounter {
+	shardCount = shard.NormalizeShardCount(shardCount)
 	shards := make([]*shard.Shard[*vals.Counter], shardCount)
 	for i := range shards {
 		shards[i] = shard.NewShard[*vals.Counter]()

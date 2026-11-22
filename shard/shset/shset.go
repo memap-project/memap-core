@@ -12,7 +12,9 @@ type ShardedSet struct {
 }
 
 // NewShardedSet creates a new ShardedSet with the given number of shards.
+// shardCount is normalized to a power of two in [1, 128].
 func NewShardedSet(shardCount uint8) *ShardedSet {
+	shardCount = shard.NormalizeShardCount(shardCount)
 	shards := make([]*shard.Shard[*vals.Set], shardCount)
 	for i := range shards {
 		shards[i] = shard.NewShard[*vals.Set]()

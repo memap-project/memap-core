@@ -20,6 +20,25 @@ func HashKey(key string) uint32 {
 	return h
 }
 
+// NormalizeShardCount converts any uint8 shardCount to a valid power of two in [1, 128].
+// Values <= 1 become 1; values > 128 are capped at 128; other non-powers of two are rounded up.
+func NormalizeShardCount(shardCount uint8) uint8 {
+	if shardCount <= 1 {
+		return 1
+	}
+	if shardCount&(shardCount-1) == 0 {
+		return shardCount
+	}
+	if shardCount > 128 {
+		return 128
+	}
+	var p uint8 = 1
+	for p < shardCount {
+		p <<= 1
+	}
+	return p
+}
+
 // ShardIndex returns the shard index for the given key and shardCount.
 // shardCount must be a power of two.
 func ShardIndex(key string, shardCount uint8) uint32 {

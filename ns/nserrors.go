@@ -16,6 +16,7 @@ var (
 	ErrIndexOutOfBounds       = errors.New("index out of bounds")
 	ErrLimitExceeded          = errors.New("limit exceeded")
 	ErrFieldNotFound          = errors.New("field not found")
+	ErrInvalidCapacity        = errors.New("invalid capacity")
 )
 
 // statusToError converts a shard.Status code to a corresponding error.
@@ -25,6 +26,8 @@ func statusToError(status shard.Status) error {
 		return nil
 	case shard.StatusNotFound, shard.StatusExpired:
 		return ErrKeyNotFound
+	case shard.StatusAlreadyExists:
+		return ErrKeyAlreadyExists
 	case shard.StatusBufferEmpty:
 		return ErrBufferEmpty
 	case shard.StatusIndexOutOfBounds:
@@ -33,6 +36,8 @@ func statusToError(status shard.Status) error {
 		return ErrLimitExceeded
 	case shard.StatusFieldNotFound:
 		return ErrFieldNotFound
+	case shard.StatusInvalidCapacity:
+		return ErrInvalidCapacity
 	default:
 		return ErrKeyNotFound
 	}

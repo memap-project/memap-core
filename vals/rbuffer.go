@@ -1,10 +1,32 @@
 package vals
 
 import (
+	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
 )
+
+// DefaultMaxRingBufferCap is the default upper bound for a RingBuffer capacity.
+const DefaultMaxRingBufferCap int64 = 1 << 20
+
+// MaxSafeRingBufferCap is the hard upper bound on ring buffer capacity to avoid makeslice panics.
+const MaxSafeRingBufferCap int64 = math.MaxInt / 16
+
+// ErrInvalidCapacity is returned when a ring buffer capacity is out of valid bounds.
+var ErrInvalidCapacity = errors.New("ring buffer capacity must be between 1 and max capacity")
+
+// NormalizeMaxRingBufferCap returns a safe positive upper bound for ring buffer capacity.
+func NormalizeMaxRingBufferCap(maxCap int64) int64 {
+	if maxCap <= 0 {
+		return DefaultMaxRingBufferCap
+	}
+	if maxCap > MaxSafeRingBufferCap {
+		return MaxSafeRingBufferCap
+	}
+	return maxCap
+}
 
 // intstr represents types supported by RingBuffer (int64 or string).
 type intstr interface {
@@ -23,8 +45,33 @@ type RingBuffer[T intstr] struct {
 	expiresAt atomic.Int64
 }
 
+// NewRingBufferWithMax creates a new RingBuffer after validating that 1 <= cap <= maxCap.
+// If maxCap <= 0, DefaultMaxRingBufferCap is used.
+func NewRingBufferWithMax[T intstr](cap, maxCap int64) (*RingBuffer[T], error) {
+	maxCap = NormalizeMaxRingBufferCap(maxCap)
+	if cap <= 0 || cap > maxCap {
+		return nil, ErrInvalidCapacity
+	}
+	return &RingBuffer[T]{
+		mu:   sync.RWMutex{},
+		buf:  make([]T, cap),
+		cap:  cap,
+		len:  0,
+		head: 0,
+		tail: 0,
+	}, nil
+}
+
 // NewRingBuffer creates a new RingBuffer with the given capacity.
+// Non-positive capacities produce a safe zero-capacity buffer (Push is a no-op).
+// Capacities exceeding DefaultMaxRingBufferCap are capped to prevent OOM panics;
+// use NewRingBufferWithMax when explicit validation or custom limits are required.
 func NewRingBuffer[T intstr](cap int64) *RingBuffer[T] {
+	if cap <= 0 {
+		cap = 0
+	} else if cap > DefaultMaxRingBufferCap {
+		cap = DefaultMaxRingBufferCap
+	}
 	return &RingBuffer[T]{
 		mu:   sync.RWMutex{},
 		buf:  make([]T, cap),
@@ -72,6 +119,9 @@ func (rb *RingBuffer[T]) TTL() int64 {
 func (rb *RingBuffer[T]) Push(val T) {
 	rb.mu.Lock()
 	defer rb.mu.Unlock()
+	if rb.cap <= 0 {
+		return
+	}
 	rb.buf[rb.tail] = val
 	rb.tail = (rb.tail + 1) % rb.cap
 	if rb.len < rb.cap {

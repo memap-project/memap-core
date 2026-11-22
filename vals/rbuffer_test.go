@@ -28,6 +28,35 @@ func TestRingBuffer_NewRingBuffer(t *testing.T) {
 		assert.Equal(t, int64(10), rbInt.Cap())
 		assert.True(t, rbInt.IsEmpty())
 	})
+
+	t.Run("non-positive capacity does not panic on construction or push", func(t *testing.T) {
+		for _, capVal := range []int64{-10, -1, 0} {
+			rb := NewRingBuffer[string](capVal)
+			require.NotNil(t, rb)
+			assert.Equal(t, int64(0), rb.Cap())
+			assert.NotPanics(t, func() {
+				rb.Push("ignored")
+			})
+			assert.Equal(t, int64(0), rb.Len())
+			_, ok := rb.Pop()
+			assert.False(t, ok)
+		}
+	})
+
+	t.Run("NewRingBufferWithMax enforces bounds", func(t *testing.T) {
+		_, err := NewRingBufferWithMax[string](0, 10)
+		assert.ErrorIs(t, err, ErrInvalidCapacity)
+
+		_, err = NewRingBufferWithMax[string](-5, 10)
+		assert.ErrorIs(t, err, ErrInvalidCapacity)
+
+		_, err = NewRingBufferWithMax[string](11, 10)
+		assert.ErrorIs(t, err, ErrInvalidCapacity)
+
+		rb, err := NewRingBufferWithMax[string](10, 10)
+		require.NoError(t, err)
+		assert.Equal(t, int64(10), rb.Cap())
+	})
 }
 
 func TestRingBuffer_Push_and_Pop(t *testing.T) {

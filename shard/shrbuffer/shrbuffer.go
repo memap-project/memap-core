@@ -8,17 +8,27 @@ import (
 // ShardedRingBuffer is a partitioned map storing ring buffers across multiple shards.
 type ShardedRingBuffer struct {
 	shardCount uint8
+	maxCap     int64
 	shards     []*shard.Shard[*vals.RingBuffer[string]]
 }
 
-// NewShardedRingBuffer creates a new ShardedRingBuffer with the given shard count.
-func NewShardedRingBuffer(shardCount uint8) *ShardedRingBuffer {
+// NewShardedRingBuffer creates a new ShardedRingBuffer with the given shard count and optional max capacity per buffer.
+// shardCount is normalized to a power of two in [1, 128].
+// If maxCap is omitted or <= 0, vals.DefaultMaxRingBufferCap is used.
+func NewShardedRingBuffer(shardCount uint8, maxCap ...int64) *ShardedRingBuffer {
+	shardCount = shard.NormalizeShardCount(shardCount)
+	var limit int64
+	if len(maxCap) > 0 {
+		limit = maxCap[0]
+	}
+	limit = vals.NormalizeMaxRingBufferCap(limit)
 	shards := make([]*shard.Shard[*vals.RingBuffer[string]], shardCount)
 	for i := range shards {
 		shards[i] = shard.NewShard[*vals.RingBuffer[string]]()
 	}
 	return &ShardedRingBuffer{
 		shardCount: shardCount,
+		maxCap:     limit,
 		shards:     shards,
 	}
 }
@@ -29,19 +39,28 @@ func (shrb *ShardedRingBuffer) getShard(key string) *shard.Shard[*vals.RingBuffe
 }
 
 // Init initializes a new ring buffer with the given key, capacity, and optional TTL.
-// Returns true if the ring buffer was created.
-// Returns false if a ring buffer already exists for the given key.
-func (shrb *ShardedRingBuffer) Init(key string, cap, ttl int64) bool {
-	rb, ok := shrb.getShard(key).GetOrInit(key, func() *vals.RingBuffer[string] {
-		return vals.NewRingBuffer[string](cap)
+// Returns StatusSuccess if the ring buffer was created.
+// Returns StatusInvalidCapacity if capacity is <= 0 or exceeds the configured max capacity.
+// Returns StatusAlreadyExists if a ring buffer already exists for the given key.
+func (shrb *ShardedRingBuffer) Init(key string, cap, ttl int64) shard.Status {
+	if cap <= 0 || cap > shrb.maxCap {
+		return shard.StatusInvalidCapacity
+	}
+	_, existed := shrb.getShard(key).GetOrInit(key, func() *vals.RingBuffer[string] {
+		rb, err := vals.NewRingBufferWithMax[string](cap, shrb.maxCap)
+		if err != nil {
+			// Unreachable because cap and shrb.maxCap are pre-validated above.
+			panic(err)
+		}
+		if ttl > 0 {
+			rb.Expire(ttl)
+		}
+		return rb
 	})
-	if ok {
-		return false
+	if existed {
+		return shard.StatusAlreadyExists
 	}
-	if ttl > 0 {
-		rb.Expire(ttl)
-	}
-	return true
+	return shard.StatusSuccess
 }
 
 // Push adds a value to the ring buffer for the given key.

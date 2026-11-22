@@ -23,14 +23,19 @@ type Namespace struct {
 }
 
 // NewNamespace creates a new Namespace with initialized storage components.
+// If cfg is nil, default namespace configuration is used.
 func NewNamespace(cfg *config.NamespaceConfig) *Namespace {
+	if cfg == nil {
+		def := config.DefaultConfig().Namespace
+		cfg = &def
+	}
 	return &Namespace{
 		mu:        sync.RWMutex{},
 		cfg:       cfg,
 		shmap:     shmap.NewShardedMap(cfg.ShardCounts.Shmap),
 		shhash:    shhash.NewShardedHash(cfg.ShardCounts.Shhash),
 		shcounter: shcounter.NewShardedCounter(cfg.ShardCounts.Shcounter),
-		shrbuffer: shrbuffer.NewShardedRingBuffer(cfg.ShardCounts.Shrbuffer),
+		shrbuffer: shrbuffer.NewShardedRingBuffer(cfg.ShardCounts.Shrbuffer, cfg.MaxRingBufferCapacity),
 		shset:     shset.NewShardedSet(cfg.ShardCounts.Shset),
 	}
 }

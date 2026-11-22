@@ -50,6 +50,29 @@ func Test_ShardIndex(t *testing.T) {
 	})
 }
 
+func Test_NormalizeShardCount(t *testing.T) {
+	cases := map[uint8]uint8{
+		0:   1,
+		1:   1,
+		2:   2,
+		3:   4,
+		4:   4,
+		5:   8,
+		7:   8,
+		8:   8,
+		9:   16,
+		64:  64,
+		65:  128,
+		127: 128,
+		128: 128,
+		129: 128,
+		255: 128,
+	}
+	for in, want := range cases {
+		assert.Equal(t, want, NormalizeShardCount(in), "input=%d", in)
+	}
+}
+
 func TestShard_NewShard(t *testing.T) {
 	s := NewShard[string]()
 	require.NotNil(t, s)

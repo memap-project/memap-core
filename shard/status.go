@@ -8,8 +8,10 @@ const (
 	StatusSuccess Status = iota
 	StatusNotFound
 	StatusExpired
+	StatusAlreadyExists
 	StatusBufferEmpty
 	StatusIndexOutOfBounds
 	StatusLimitExceeded
 	StatusFieldNotFound
+	StatusInvalidCapacity
 )
