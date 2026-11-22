@@ -7,6 +7,14 @@ type TypedSyncMap[K comparable, V any] struct {
 	m sync.Map
 }
 
+func castValue[V any](actual any) V {
+	if actual == nil {
+		var zero V
+		return zero
+	}
+	return actual.(V)
+}
+
 // Load retrieves a value for the given key from the map.
 // Returns zero value and false if the key does not exist.
 func (tm *TypedSyncMap[K, V]) Load(key K) (V, bool) {
@@ -15,7 +23,7 @@ func (tm *TypedSyncMap[K, V]) Load(key K) (V, bool) {
 		var zero V
 		return zero, false
 	}
-	return actual.(V), true
+	return castValue[V](actual), true
 }
 
 // Store sets or updates the value for the given key.
@@ -27,7 +35,7 @@ func (tm *TypedSyncMap[K, V]) Store(key K, value V) {
 // Returns true if the value was loaded, false if stored.
 func (tm *TypedSyncMap[K, V]) LoadOrStore(key K, value V) (V, bool) {
 	actual, loaded := tm.m.LoadOrStore(key, value)
-	return actual.(V), loaded
+	return castValue[V](actual), loaded
 }
 
 // Delete removes the key and its value from the map.
@@ -43,17 +51,13 @@ func (tm *TypedSyncMap[K, V]) LoadAndDelete(key K) (V, bool) {
 		var zero V
 		return zero, false
 	}
-	if actual == nil {
-		var zero V
-		return zero, true
-	}
-	return actual.(V), true
+	return castValue[V](actual), true
 }
 
 // Range calls the provided function for each key-value pair in the map.
 // If fn returns false, Range stops iteration.
 func (tm *TypedSyncMap[K, V]) Range(fn func(key K, value V) bool) {
 	tm.m.Range(func(key, value any) bool {
-		return fn(key.(K), value.(V))
+		return fn(key.(K), castValue[V](value))
 	})
 }

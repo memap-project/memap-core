@@ -130,10 +130,10 @@ func (rb *RingBuffer[T]) At(index int64) (T, bool) {
 func (rb *RingBuffer[T]) Slice() []T {
 	rb.mu.RLock()
 	defer rb.mu.RUnlock()
-	result := make([]T, rb.len)
 	if rb.len == 0 {
-		return result
+		return nil
 	}
+	result := make([]T, rb.len)
 	firstPart := min(rb.cap-rb.head, rb.len)
 	copy(result, rb.buf[rb.head:rb.head+firstPart])
 	if secondPart := rb.len - firstPart; secondPart > 0 {

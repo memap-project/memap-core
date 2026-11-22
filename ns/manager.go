@@ -5,6 +5,7 @@ import (
 
 	"github.com/memap-project/memap-core/config"
 	"github.com/memap-project/memap-core/tsmap"
+	"github.com/memap-project/memap-core/vals"
 )
 
 type nsRegistry struct {
@@ -59,6 +60,17 @@ func (nm *NamespaceManager) validateKey(key string) error {
 func (nm *NamespaceManager) validateValue(val string) error {
 	if nm.cfg.MaxValueBytes > 0 && len(val) > nm.cfg.MaxValueBytes {
 		return ErrValueTooLarge
+	}
+	return nil
+}
+
+// validateOptionalTTL permits 0 (no expiration) or any strictly positive non-overflowing TTL.
+func validateOptionalTTL(ttl int64) error {
+	if ttl == 0 {
+		return nil
+	}
+	if !vals.IsValidTTL(ttl) {
+		return ErrInvalidTTL
 	}
 	return nil
 }

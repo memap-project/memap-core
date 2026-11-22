@@ -6,6 +6,7 @@ type Core interface {
 	HashStore
 	CounterStore
 	RingBufferStore
+	SetStore
 	NamespaceOps
 	Close()
 }
@@ -41,6 +42,7 @@ type CounterStore interface {
 	CGLimit(key string) (int64, error)
 	CGet(key string) (int64, error)
 	CDel(key string) error
+	CReset(key string) error
 	CExpire(key string, ttl int64) error
 	CTTL(key string) (int64, error)
 	CIncrBy(key string, alpha int64) (int64, error)
@@ -68,6 +70,7 @@ type RingBufferStore interface {
 type SetStore interface {
 	SAdd(key, member string, ttl int64) error
 	SRemove(key, member string) error
+	SDel(key string) error
 	SIsMember(key, member string) (bool, error)
 	SCard(key string) (int64, error)
 	SMembers(key string) ([]string, error)

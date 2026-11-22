@@ -2,9 +2,13 @@ package ns
 
 // SAdd adds a member to a set in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is negative or overflows.
 // Returns [ErrKeyTooLarge] / [ErrValueTooLarge] if key or member exceeds configured limits.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) SAdd(ns, key, member string, ttl int64) error {
+	if err := validateOptionalTTL(ttl); err != nil {
+		return err
+	}
 	if err := nm.validateKey(key); err != nil {
 		return err
 	}
@@ -36,6 +40,22 @@ func (nm *NamespaceManager) SRemove(ns, key, member string) error {
 		return ErrNamespaceNotFound
 	}
 	n.shset.Remove(key, member)
+	return nil
+}
+
+// SDel removes an entire set for the given key from the specified namespace.
+// If ns is empty, the default namespace is used.
+// Returns [ErrNamespaceNotFound] if the namespace does not exist.
+func (nm *NamespaceManager) SDel(ns, key string) error {
+	if ns == "" {
+		nm.defaultNs.shset.Delete(key)
+		return nil
+	}
+	n, exists := nm.GetNs(ns)
+	if !exists {
+		return ErrNamespaceNotFound
+	}
+	n.shset.Delete(key)
 	return nil
 }
 
@@ -84,17 +104,17 @@ func (nm *NamespaceManager) SMembers(ns, key string) ([]string, error) {
 	if ns == "" {
 		members, ok := nm.defaultNs.shset.Members(key)
 		if !ok {
-			return []string{}, ErrKeyNotFound
+			return nil, ErrKeyNotFound
 		}
 		return members, nil
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
-		return []string{}, ErrNamespaceNotFound
+		return nil, ErrNamespaceNotFound
 	}
 	members, ok := n.shset.Members(key)
 	if !ok {
-		return []string{}, ErrKeyNotFound
+		return nil, ErrKeyNotFound
 	}
 	return members, nil
 }

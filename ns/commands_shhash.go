@@ -14,20 +14,24 @@ func (nm *NamespaceManager) HGet(ns, key string) (map[string]string, error) {
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
-		return map[string]string{}, ErrNamespaceNotFound
+		return nil, ErrNamespaceNotFound
 	}
 	v, ok := n.shhash.Get(key)
 	if !ok {
-		return v, ErrKeyNotFound
+		return nil, ErrKeyNotFound
 	}
 	return v, nil
 }
 
 // HSet creates or overwrites a hash for the given key with optional TTL in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is negative or overflows.
 // Returns [ErrKeyTooLarge] if key exceeds MaxKeyBytes.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) HSet(ns, key string, ttl int64) error {
+	if err := validateOptionalTTL(ttl); err != nil {
+		return err
+	}
 	if err := nm.validateKey(key); err != nil {
 		return err
 	}
@@ -151,11 +155,11 @@ func (nm *NamespaceManager) HKeys(ns, key string) ([]string, error) {
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
-		return []string{}, ErrNamespaceNotFound
+		return nil, ErrNamespaceNotFound
 	}
 	keys, ok := n.shhash.Keys(key)
 	if !ok {
-		return keys, ErrKeyNotFound
+		return nil, ErrKeyNotFound
 	}
 	return keys, nil
 }
@@ -168,17 +172,17 @@ func (nm *NamespaceManager) HValues(ns, key string) ([]string, error) {
 	if ns == "" {
 		values, ok := nm.defaultNs.shhash.Values(key)
 		if !ok {
-			return values, ErrKeyNotFound
+			return nil, ErrKeyNotFound
 		}
 		return values, nil
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
-		return []string{}, ErrNamespaceNotFound
+		return nil, ErrNamespaceNotFound
 	}
 	values, ok := n.shhash.Values(key)
 	if !ok {
-		return values, ErrKeyNotFound
+		return nil, ErrKeyNotFound
 	}
 	return values, nil
 }

@@ -8,6 +8,11 @@ func (c *Cache) SRemove(key, member string) error {
 	return c.manager.SRemove("", key, member)
 }
 
+// SDel removes an entire set from the default namespace.
+func (c *Cache) SDel(key string) error {
+	return c.manager.SDel("", key)
+}
+
 func (c *Cache) SIsMember(key, member string) (bool, error) {
 	return c.manager.SIsMember("", key, member)
 }
@@ -34,6 +39,11 @@ func (ctx *Namespace) SAdd(key, member string, ttl int64) error {
 
 func (ctx *Namespace) SRemove(key, member string) error {
 	return ctx.manager.SRemove(ctx.name, key, member)
+}
+
+// SDel removes an entire set from this namespace.
+func (ctx *Namespace) SDel(key string) error {
+	return ctx.manager.SDel(ctx.name, key)
 }
 
 func (ctx *Namespace) SIsMember(key, member string) (bool, error) {

@@ -15,8 +15,11 @@ type Cleaner struct {
 	cleanFunc func(context.Context)
 	ctx       context.Context
 	cancel    context.CancelFunc
-	startOnce sync.Once
-	wg        sync.WaitGroup
+
+	mu      sync.Mutex
+	started bool
+	stopped bool
+	wg      sync.WaitGroup
 }
 
 // NewCleaner creates a new Cleaner with the given interval (in seconds) and cleanup function.
@@ -50,23 +53,33 @@ func NewCleanerWithContext(parentCtx context.Context, interval int, cleanFunc fu
 }
 
 // Start runs the cleaner background loop in a new goroutine.
-// Calling Start multiple times or with an invalid interval / nil cleanFunc is safe and idempotent.
+// Calling Start multiple times, after Stop, or with an invalid interval / nil cleanFunc
+// is safe and idempotent.
 func (c *Cleaner) Start() {
 	if c == nil || c.interval <= 0 || c.cleanFunc == nil {
 		return
 	}
-	c.startOnce.Do(func() {
-		c.wg.Add(1)
-		go c.run()
-	})
+	c.mu.Lock()
+	if c.started || c.stopped || c.ctx.Err() != nil {
+		c.mu.Unlock()
+		return
+	}
+	c.started = true
+	c.wg.Add(1)
+	c.mu.Unlock()
+	go c.run()
 }
 
 // Stop stops the background cleaner loop and waits for any in-flight cleanup to finish.
+// Calling Stop multiple times or before Start is safe and idempotent.
 func (c *Cleaner) Stop() {
 	if c == nil {
 		return
 	}
+	c.mu.Lock()
+	c.stopped = true
 	c.cancel()
+	c.mu.Unlock()
 	c.wg.Wait()
 }
 

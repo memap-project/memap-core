@@ -166,9 +166,9 @@ func TestRingBuffer_At(t *testing.T) {
 }
 
 func TestRingBuffer_Slice(t *testing.T) {
-	t.Run("returns elements in logical order", func(t *testing.T) {
+	t.Run("returns nil when empty and elements in logical order", func(t *testing.T) {
 		rb := NewRingBuffer[string](4)
-		assert.Empty(t, rb.Slice())
+		assert.Nil(t, rb.Slice())
 
 		rb.Push("1")
 		rb.Push("2")

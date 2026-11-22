@@ -230,8 +230,8 @@ func (s *Shard[V]) DeleteIf(key string, match func(V) bool) bool {
 	return true
 }
 
-// Update updates an item in the Shard under write lock if it exists.
-// Returns true if the item was found and the update function returned true.
+// Update invokes fn on the item for key under write lock if it exists.
+// Returns true if the item was found and fn returned true.
 // Returns false if the item does not exist.
 func (s *Shard[V]) Update(key string, fn func(val V) bool) bool {
 	s.mu.Lock()
@@ -240,11 +240,30 @@ func (s *Shard[V]) Update(key string, fn func(val V) bool) bool {
 	if !ok {
 		return false
 	}
-	if fn(val) {
-		s.items[key] = val
-		return true
+	return fn(val)
+}
+
+// ModifyValue atomically inspects and optionally mutates or deletes a value-type entry
+// under write lock without requiring heap-allocated pointer wrappers.
+// If fn returns (updated, del, status): when del is true the key is removed;
+// otherwise if updated is true the modified value is stored back into the map.
+func (s *Shard[V]) ModifyValue(key string, fn func(val *V) (updated bool, del bool, status Status)) Status {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	val, ok := s.items[key]
+	if !ok {
+		return StatusNotFound
 	}
-	return false
+	updated, del, status := fn(&val)
+	if del {
+		delete(s.items, key)
+		s.maybeShrinkLocked()
+		return status
+	}
+	if updated {
+		s.items[key] = val
+	}
+	return status
 }
 
 // ExpireInPlace atomically checks existence and expiration under write lock,

@@ -117,6 +117,11 @@ func (s *ShardedSet) Members(key string) ([]string, bool) {
 	return set.Members(), true
 }
 
+// Delete removes the entire Set for the given key.
+func (s *ShardedSet) Delete(key string) {
+	s.getShard(key).Delete(key)
+}
+
 // Expire sets the expiration time for the Set of the given key.
 // Returns StatusSuccess if expiration was set, StatusInvalidTTL if ttl is invalid or overflows,
 // or StatusNotFound/StatusExpired if the Set does not exist or is already expired.

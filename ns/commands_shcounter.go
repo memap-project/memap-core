@@ -85,6 +85,27 @@ func (nm *NamespaceManager) CDel(ns, key string) error {
 	return nil
 }
 
+// CReset resets the value of an existing counter to 0 in the specified namespace.
+// If ns is empty, the default namespace is used.
+// Returns [ErrNamespaceNotFound] if the namespace does not exist.
+// Returns [ErrKeyNotFound] if the counter does not exist or is expired.
+func (nm *NamespaceManager) CReset(ns, key string) error {
+	if ns == "" {
+		if ok := nm.defaultNs.shcounter.Reset(key); !ok {
+			return ErrKeyNotFound
+		}
+		return nil
+	}
+	n, exists := nm.GetNs(ns)
+	if !exists {
+		return ErrNamespaceNotFound
+	}
+	if ok := n.shcounter.Reset(key); !ok {
+		return ErrKeyNotFound
+	}
+	return nil
+}
+
 // CExpire sets the expiration time for the counter in the specified namespace.
 // If ns is empty, the default namespace is used.
 // Returns [ErrInvalidTTL] if ttl is non-positive or overflows.
@@ -116,7 +137,7 @@ func (nm *NamespaceManager) CTTL(ns, key string) (int64, error) {
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
-		return -2, ErrNamespaceNotFound
+		return 0, ErrNamespaceNotFound
 	}
 	ttl := n.shcounter.TTL(key)
 	if ttl == -2 {

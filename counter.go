@@ -21,6 +21,11 @@ func (c *Cache) CDel(key string) error {
 	return c.manager.CDel("", key)
 }
 
+// CReset resets the counter value to 0 in the default namespace.
+func (c *Cache) CReset(key string) error {
+	return c.manager.CReset("", key)
+}
+
 // CExpire sets the expiration time for the counter in the default namespace.
 func (c *Cache) CExpire(key string, ttl int64) error {
 	return c.manager.CExpire("", key, ttl)
@@ -60,6 +65,11 @@ func (ctx *Namespace) CGet(key string) (int64, error) {
 // CDel removes a counter from this namespace.
 func (ctx *Namespace) CDel(key string) error {
 	return ctx.manager.CDel(ctx.name, key)
+}
+
+// CReset resets the counter value to 0 in this namespace.
+func (ctx *Namespace) CReset(key string) error {
+	return ctx.manager.CReset(ctx.name, key)
 }
 
 // CExpire sets the expiration time for the counter in this namespace.

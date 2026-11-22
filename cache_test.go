@@ -237,3 +237,128 @@ func TestCache_HighSecurityFixes(t *testing.T) {
 		assert.Equal(t, 2, present)
 	})
 }
+
+func TestCache_MediumFixes(t *testing.T) {
+	t.Run("Core interface includes SetStore, SDel, and CReset", func(t *testing.T) {
+		var core memap.Core = memap.New()
+		defer core.Close()
+
+		require.NoError(t, core.SAdd("tags", "go", 0))
+		require.NoError(t, core.SAdd("tags", "cache", 0))
+		require.NoError(t, core.SDel("tags"))
+		_, err := core.SCard("tags")
+		require.ErrorIs(t, err, memap.ErrKeyNotFound)
+
+		_, err = core.CIncrBy("hits", 5)
+		require.NoError(t, err)
+		require.NoError(t, core.CReset("hits"))
+		v, err := core.CGet("hits")
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), v)
+		require.ErrorIs(t, core.CReset("missing_counter"), memap.ErrKeyNotFound)
+	})
+
+	t.Run("HSet overwrites existing hash and clears old fields", func(t *testing.T) {
+		c := memap.New()
+		defer c.Close()
+
+		require.NoError(t, c.HFSet("session:1", "secret", "top-secret"))
+		require.NoError(t, c.HSet("session:1", 60))
+
+		_, err := c.HFGet("session:1", "secret")
+		require.ErrorIs(t, err, memap.ErrFieldNotFound)
+		l, err := c.HLen("session:1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), l)
+	})
+
+	t.Run("CreateNamespace rejects empty name", func(t *testing.T) {
+		c := memap.New()
+		defer c.Close()
+
+		require.ErrorIs(t, c.CreateNamespace(""), memap.ErrInvalidNamespace)
+	})
+
+	t.Run("BReset returns ErrKeyNotFound for missing buffer", func(t *testing.T) {
+		c := memap.New()
+		defer c.Close()
+
+		require.ErrorIs(t, c.BReset("missing_buf"), memap.ErrKeyNotFound)
+	})
+
+	t.Run("Set, HSet, SAdd, and BInit reject negative or overflowing TTL", func(t *testing.T) {
+		c := memap.New()
+		defer c.Close()
+
+		require.ErrorIs(t, c.Set("k", "v", -1), memap.ErrInvalidTTL)
+		require.ErrorIs(t, c.Set("k", "v", math.MaxInt64), memap.ErrInvalidTTL)
+		require.ErrorIs(t, c.HSet("h", -1), memap.ErrInvalidTTL)
+		require.ErrorIs(t, c.SAdd("s", "m", -1), memap.ErrInvalidTTL)
+		require.ErrorIs(t, c.BInit("b", 4, -1), memap.ErrInvalidTTL)
+	})
+
+	t.Run("TTL methods return 0 consistently on ErrNamespaceNotFound and miss paths return nil", func(t *testing.T) {
+		c := memap.New()
+		defer c.Close()
+
+		missing := c.WithNamespace("no_such_ns")
+		for _, fn := range []func(string) (int64, error){
+			missing.TTL, missing.HTTL, missing.CTTL, missing.BTTL, missing.STTL,
+		} {
+			ttl, err := fn("k")
+			assert.Equal(t, int64(0), ttl)
+			assert.ErrorIs(t, err, memap.ErrNamespaceNotFound)
+		}
+
+		h, err := c.HGet("missing")
+		assert.Nil(t, h)
+		assert.ErrorIs(t, err, memap.ErrKeyNotFound)
+
+		hk, err := missing.HKeys("k")
+		assert.Nil(t, hk)
+		assert.ErrorIs(t, err, memap.ErrNamespaceNotFound)
+
+		sm, err := c.SMembers("missing")
+		assert.Nil(t, sm)
+		assert.ErrorIs(t, err, memap.ErrKeyNotFound)
+	})
+
+	t.Run("nil Cache Close is safe", func(t *testing.T) {
+		var nilCache *memap.Cache
+		assert.NotPanics(t, func() {
+			nilCache.Close()
+		})
+	})
+}
+
+func BenchmarkKV_SetOverwrite(b *testing.B) {
+	c := memap.New()
+	defer c.Close()
+	_ = c.Set("bench-key", "val", 60)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		_ = c.Set("bench-key", "val2", 60)
+	}
+}
+
+func BenchmarkKV_GetHit(b *testing.B) {
+	c := memap.New()
+	defer c.Close()
+	_ = c.Set("bench-key", "val", 60)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = c.Get("bench-key")
+	}
+}
+
+func BenchmarkHash_GetMiss(b *testing.B) {
+	c := memap.New()
+	defer c.Close()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		_, _ = c.HGet("missing-hash")
+	}
+}

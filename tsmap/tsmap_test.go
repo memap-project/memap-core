@@ -241,3 +241,38 @@ func TestTypedSyncMap_Concurrency(t *testing.T) {
 		assert.Equal(t, goroutines-1, loadedCount)
 	})
 }
+
+func TestTypedSyncMap_NilInterfaceValue(t *testing.T) {
+	var tm TypedSyncMap[string, error]
+
+	assert.NotPanics(t, func() {
+		tm.Store("nil_err", nil)
+
+		val, ok := tm.Load("nil_err")
+		assert.True(t, ok)
+		assert.NoError(t, val)
+
+		actual, loaded := tm.LoadOrStore("nil_err", assert.AnError)
+		assert.True(t, loaded)
+		assert.NoError(t, actual)
+
+		actual, loaded = tm.LoadOrStore("nil_err_2", nil)
+		assert.False(t, loaded)
+		assert.NoError(t, actual)
+
+		visited := 0
+		tm.Range(func(k string, v error) bool {
+			visited++
+			assert.NoError(t, v)
+			return true
+		})
+		assert.Equal(t, 2, visited)
+
+		deletedVal, deleted := tm.LoadAndDelete("nil_err")
+		assert.True(t, deleted)
+		assert.NoError(t, deletedVal)
+
+		_, deleted = tm.LoadAndDelete("nil_err")
+		assert.False(t, deleted)
+	})
+}

@@ -11,6 +11,7 @@ var (
 	ErrNamespaceAlreadyExists = errors.New("namespace already exists")
 	ErrNamespaceNotFound      = errors.New("namespace not found")
 	ErrNamespaceLimitExceeded = errors.New("namespace limit exceeded")
+	ErrInvalidNamespace       = errors.New("namespace name must not be empty")
 	ErrKeyNotFound            = errors.New("key not found")
 	ErrKeyAlreadyExists       = errors.New("key already exists")
 	ErrKeyTooLarge            = errors.New("key exceeds maximum allowed size")

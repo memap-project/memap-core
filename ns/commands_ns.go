@@ -9,10 +9,14 @@ func (nm *NamespaceManager) GetNs(name string) (*Namespace, bool) {
 }
 
 // Create creates a new namespace with the given name.
+// Returns [ErrInvalidNamespace] if name is empty (reserved for the default namespace).
 // Returns [ErrKeyTooLarge] if name exceeds MaxKeyBytes.
 // Returns [ErrNamespaceAlreadyExists] if the namespace already exists.
 // Returns [ErrNamespaceLimitExceeded] if MaxNamespaces is reached.
 func (nm *NamespaceManager) Create(name string) error {
+	if name == "" {
+		return ErrInvalidNamespace
+	}
 	if err := nm.validateKey(name); err != nil {
 		return err
 	}

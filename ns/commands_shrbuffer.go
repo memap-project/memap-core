@@ -2,11 +2,15 @@ package ns
 
 // BInit initializes a ring buffer with the given capacity and optional TTL in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is negative or overflows.
 // Returns [ErrKeyTooLarge] if key exceeds MaxKeyBytes.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 // Returns [ErrInvalidCapacity] if capacity is <= 0 or exceeds the configured max capacity.
 // Returns [ErrKeyAlreadyExists] if an unexpired ring buffer already exists for the given key.
 func (nm *NamespaceManager) BInit(ns, key string, capacity, ttl int64) error {
+	if err := validateOptionalTTL(ttl); err != nil {
+		return err
+	}
 	if err := nm.validateKey(key); err != nil {
 		return err
 	}
@@ -193,16 +197,21 @@ func (nm *NamespaceManager) BLen(ns, key string) (int64, error) {
 // BReset resets the ring buffer in the specified namespace.
 // If ns is empty, the default namespace is used.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
+// Returns [ErrKeyNotFound] if the ring buffer does not exist or is expired.
 func (nm *NamespaceManager) BReset(ns, key string) error {
 	if ns == "" {
-		nm.defaultNs.shrbuffer.Reset(key)
+		if ok := nm.defaultNs.shrbuffer.Reset(key); !ok {
+			return ErrKeyNotFound
+		}
 		return nil
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	n.shrbuffer.Reset(key)
+	if ok := n.shrbuffer.Reset(key); !ok {
+		return ErrKeyNotFound
+	}
 	return nil
 }
 

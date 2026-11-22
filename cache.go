@@ -30,6 +30,7 @@ var (
 	_ HashStore       = (*Namespace)(nil)
 	_ CounterStore    = (*Namespace)(nil)
 	_ RingBufferStore = (*Namespace)(nil)
+	_ SetStore        = (*Namespace)(nil)
 )
 
 // New creates and starts a new Cache instance with optional configuration.
@@ -67,8 +68,11 @@ func newCache(c config.Config) *Cache {
 	}
 }
 
-// Close stops the background expiration cleaner.
+// Close stops the background expiration cleaner and waits for it to exit.
 func (c *Cache) Close() {
+	if c == nil || c.cleaner == nil {
+		return
+	}
 	c.cleaner.Stop()
 }
 

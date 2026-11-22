@@ -27,9 +27,13 @@ func (nm *NamespaceManager) Get(ns, key string) (string, error) {
 
 // Set stores a key-value pair with optional TTL in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is negative or overflows.
 // Returns [ErrKeyTooLarge] / [ErrValueTooLarge] if key or value exceeds configured limits.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) Set(ns, key, value string, ttl int64) error {
+	if err := validateOptionalTTL(ttl); err != nil {
+		return err
+	}
 	if err := nm.validateKey(key); err != nil {
 		return err
 	}
