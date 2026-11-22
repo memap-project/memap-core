@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/memap-project/memap-core/shard"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -91,10 +92,17 @@ func TestShardedMap_Delete(t *testing.T) {
 }
 
 func TestShardedMap_Expire_and_TTL(t *testing.T) {
-	t.Run("missing key TTL is -2 and Expire returns false", func(t *testing.T) {
+	t.Run("missing key TTL is -2 and Expire returns StatusNotFound", func(t *testing.T) {
 		shm := NewShardedMap(4)
 		assert.Equal(t, int64(-2), shm.TTL("missing"))
-		assert.False(t, shm.Expire("missing", 10))
+		assert.Equal(t, shard.StatusNotFound, shm.Expire("missing", 10))
+	})
+
+	t.Run("invalid TTL returns StatusInvalidTTL", func(t *testing.T) {
+		shm := NewShardedMap(4)
+		shm.Set("k", "v", 0)
+		assert.Equal(t, shard.StatusInvalidTTL, shm.Expire("k", 0))
+		assert.Equal(t, shard.StatusInvalidTTL, shm.Expire("k", -5))
 	})
 
 	t.Run("key without TTL returns -1", func(t *testing.T) {
@@ -107,19 +115,19 @@ func TestShardedMap_Expire_and_TTL(t *testing.T) {
 		shm := NewShardedMap(4)
 		shm.Set("k", "v", 0)
 
-		assert.True(t, shm.Expire("k", 100))
+		assert.Equal(t, shard.StatusSuccess, shm.Expire("k", 100))
 		ttl := shm.TTL("k")
 		assert.Greater(t, ttl, int64(0))
 		assert.LessOrEqual(t, ttl, int64(100))
 	})
 
-	t.Run("expired key returns TTL -2 and Expire returns false", func(t *testing.T) {
+	t.Run("expired key returns TTL -2 and Expire returns StatusExpired", func(t *testing.T) {
 		shm := NewShardedMap(4)
 		shm.Set("exp_k", "v", 1)
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1100 * time.Millisecond)
 
-		assert.False(t, shm.Expire("exp_k", 10))
+		assert.Equal(t, shard.StatusExpired, shm.Expire("exp_k", 10))
 		assert.Equal(t, int64(-2), shm.TTL("exp_k"))
 	})
 }

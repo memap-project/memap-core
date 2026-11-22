@@ -2,10 +2,14 @@ package ns
 
 // BInit initializes a ring buffer with the given capacity and optional TTL in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrKeyTooLarge] if key exceeds MaxKeyBytes.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 // Returns [ErrInvalidCapacity] if capacity is <= 0 or exceeds the configured max capacity.
-// Returns [ErrKeyAlreadyExists] if a ring buffer already exists for the given key.
+// Returns [ErrKeyAlreadyExists] if an unexpired ring buffer already exists for the given key.
 func (nm *NamespaceManager) BInit(ns, key string, capacity, ttl int64) error {
+	if err := nm.validateKey(key); err != nil {
+		return err
+	}
 	if ns == "" {
 		status := nm.defaultNs.shrbuffer.Init(key, capacity, ttl)
 		return statusToError(status)
@@ -20,9 +24,13 @@ func (nm *NamespaceManager) BInit(ns, key string, capacity, ttl int64) error {
 
 // BPush pushes a value to the ring buffer in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrValueTooLarge] if value exceeds MaxValueBytes.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 // Returns [ErrKeyNotFound] if the ring buffer does not exist or is expired.
 func (nm *NamespaceManager) BPush(ns, key, value string) error {
+	if err := nm.validateValue(value); err != nil {
+		return err
+	}
 	if ns == "" {
 		ok := nm.defaultNs.shrbuffer.Push(key, value)
 		if !ok {
@@ -216,25 +224,18 @@ func (nm *NamespaceManager) BDel(ns, key string) error {
 
 // BExpire sets the expiration time for the ring buffer of the given key in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is non-positive or overflows.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 // Returns [ErrKeyNotFound] if the ring buffer does not exist or is expired.
 func (nm *NamespaceManager) BExpire(ns, key string, ttl int64) error {
 	if ns == "" {
-		ok := nm.defaultNs.shrbuffer.Expire(key, ttl)
-		if !ok {
-			return ErrKeyNotFound
-		}
-		return nil
+		return statusToError(nm.defaultNs.shrbuffer.Expire(key, ttl))
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	ok := n.shrbuffer.Expire(key, ttl)
-	if !ok {
-		return ErrKeyNotFound
-	}
-	return nil
+	return statusToError(n.shrbuffer.Expire(key, ttl))
 }
 
 // BTTL returns the time-to-live of the ring buffer in seconds from the specified namespace.

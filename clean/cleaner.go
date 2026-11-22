@@ -12,7 +12,7 @@ const maxIntervalSec int64 = math.MaxInt64 / int64(time.Second)
 // Cleaner executes a periodic cleanup function on a fixed interval until stopped or canceled.
 type Cleaner struct {
 	interval  time.Duration
-	cleanFunc func()
+	cleanFunc func(context.Context)
 	ctx       context.Context
 	cancel    context.CancelFunc
 	startOnce sync.Once
@@ -23,6 +23,16 @@ type Cleaner struct {
 // If parentCtx is nil, context.Background() is used.
 // If interval is non-positive or overflows time.Duration, or cleanFunc is nil, Start becomes a safe no-op.
 func NewCleaner(parentCtx context.Context, interval int, cleanFunc func()) *Cleaner {
+	var fn func(context.Context)
+	if cleanFunc != nil {
+		fn = func(context.Context) { cleanFunc() }
+	}
+	return NewCleanerWithContext(parentCtx, interval, fn)
+}
+
+// NewCleanerWithContext creates a new Cleaner whose cleanup callback receives the cleaner's
+// cancellable context so long scans abort promptly on Stop.
+func NewCleanerWithContext(parentCtx context.Context, interval int, cleanFunc func(context.Context)) *Cleaner {
 	if parentCtx == nil {
 		parentCtx = context.Background()
 	}
@@ -69,7 +79,7 @@ func (c *Cleaner) run() {
 	for {
 		select {
 		case <-ticker.C:
-			c.cleanFunc()
+			c.cleanFunc(c.ctx)
 		case <-c.ctx.Done():
 			return
 		}

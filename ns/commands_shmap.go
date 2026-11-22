@@ -27,8 +27,15 @@ func (nm *NamespaceManager) Get(ns, key string) (string, error) {
 
 // Set stores a key-value pair with optional TTL in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrKeyTooLarge] / [ErrValueTooLarge] if key or value exceeds configured limits.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) Set(ns, key, value string, ttl int64) error {
+	if err := nm.validateKey(key); err != nil {
+		return err
+	}
+	if err := nm.validateValue(value); err != nil {
+		return err
+	}
 	if ns == "" {
 		nm.defaultNs.shmap.Set(key, value, ttl)
 		return nil
@@ -62,14 +69,12 @@ func (nm *NamespaceManager) Del(ns, key string) error {
 
 // Expire sets the expiration time for the key in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is non-positive or overflows.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 // Returns [ErrKeyNotFound] if the key does not exist or is expired.
 func (nm *NamespaceManager) Expire(ns, key string, ttl int64) error {
 	if ns == "" {
-		if ok := nm.defaultNs.shmap.Expire(key, ttl); !ok {
-			return ErrKeyNotFound
-		}
-		return nil
+		return statusToError(nm.defaultNs.shmap.Expire(key, ttl))
 	}
 
 	n, exists := nm.GetNs(ns)
@@ -77,10 +82,7 @@ func (nm *NamespaceManager) Expire(ns, key string, ttl int64) error {
 		return ErrNamespaceNotFound
 	}
 
-	if ok := n.shmap.Expire(key, ttl); !ok {
-		return ErrKeyNotFound
-	}
-	return nil
+	return statusToError(n.shmap.Expire(key, ttl))
 }
 
 // TTL returns the time-to-live of the key in seconds from the specified namespace.

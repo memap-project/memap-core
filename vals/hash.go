@@ -3,16 +3,16 @@ package vals
 import (
 	"maps"
 	"sync"
-	"sync/atomic"
-	"time"
 )
 
-// Hash is a thread-safe map for string key-value pairs with optional expiration.
-// If expiresAt is 0, the Hash has no expiration.
+const mapShrinkMinPeak = 256
+
+// Hash is a thread-safe map for string key-value pairs with optional monotonic expiration.
 type Hash struct {
-	mu        sync.RWMutex
-	hash      map[string]string
-	expiresAt atomic.Int64
+	expiry
+	mu      sync.RWMutex
+	hash    map[string]string
+	peakLen int
 }
 
 // NewHash creates a new Hash.
@@ -21,39 +21,6 @@ func NewHash() *Hash {
 		mu:   sync.RWMutex{},
 		hash: make(map[string]string, 8),
 	}
-}
-
-// IsExpired returns true if the Hash has an expiration time and is expired.
-// Returns false if the Hash has no expiration time or is not yet expired.
-func (h *Hash) IsExpired() bool {
-	exp := h.expiresAt.Load()
-	if exp == 0 {
-		return false
-	}
-	return time.Now().Unix() > exp
-}
-
-// Expire sets the expiration time for the Hash.
-// Returns false if the Hash is already expired or if ttl is negative.
-func (h *Hash) Expire(ttl int64) bool {
-	if h.IsExpired() {
-		return false
-	}
-	if ttl < 0 {
-		return false
-	}
-	h.expiresAt.Store(time.Now().Unix() + ttl)
-	return true
-}
-
-// TTL returns the remaining time-to-live in seconds.
-// Returns 0 if the Hash has no expiration time.
-func (h *Hash) TTL() int64 {
-	exp := h.expiresAt.Load()
-	if exp == 0 {
-		return 0
-	}
-	return exp - time.Now().Unix()
 }
 
 // GetCopy returns a copy of the Hash.
@@ -82,13 +49,24 @@ func (h *Hash) Set(key string, value string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.hash[key] = value
+	if len(h.hash) > h.peakLen {
+		h.peakLen = len(h.hash)
+	}
 }
 
-// Delete removes the specified field from the Hash.
+// Delete removes the specified field from the Hash and shrinks the underlying map
+// if occupancy drops significantly below its peak size.
 func (h *Hash) Delete(key string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.hash, key)
+	if h.peakLen >= mapShrinkMinPeak && len(h.hash)*4 <= h.peakLen {
+		newCap := max(len(h.hash), 8)
+		shrunk := make(map[string]string, newCap)
+		maps.Copy(shrunk, h.hash)
+		h.hash = shrunk
+		h.peakLen = len(h.hash)
+	}
 }
 
 // Len returns the number of fields stored in the Hash.

@@ -55,21 +55,37 @@ func TestShardedCounter_IncrBy(t *testing.T) {
 		assert.Equal(t, int64(15), got)
 	})
 
-	t.Run("re-inits expired counter and preserves limit", func(t *testing.T) {
+	t.Run("re-inits expired counter deterministically with fresh limit", func(t *testing.T) {
 		shc := NewShardedCounter(4)
-		shc.SetLimit("exp_cnt", 50)
+		require.Equal(t, shard.StatusSuccess, shc.SetLimit("exp_cnt", 50))
 		shc.IncrBy("exp_cnt", 20)
-		require.True(t, shc.Expire("exp_cnt", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1100 * time.Millisecond)
 
 		val, status := shc.IncrBy("exp_cnt", 10)
 		assert.Equal(t, shard.StatusSuccess, status)
 		assert.Equal(t, int64(10), val)
 
+		// Deterministic behavior: expired counter behaves identically to a deleted counter
 		lim, ok := shc.GetLimit("exp_cnt")
 		assert.True(t, ok)
-		assert.Equal(t, int64(50), lim)
+		assert.Equal(t, int64(0), lim)
+	})
+
+	t.Run("rejects negative alpha and negative limit without creating counter", func(t *testing.T) {
+		shc := NewShardedCounter(4)
+		assert.Equal(t, shard.StatusInvalidArg, shc.SetLimit("neg_lim", -5))
+		_, exists := shc.Get("neg_lim")
+		assert.False(t, exists)
+
+		_, status := shc.IncrBy("neg_alpha", -1)
+		assert.Equal(t, shard.StatusInvalidArg, status)
+		_, exists = shc.Get("neg_alpha")
+		assert.False(t, exists)
+
+		_, status = shc.DecrBy("neg_alpha", -1)
+		assert.Equal(t, shard.StatusInvalidArg, status)
 	})
 }
 
@@ -111,7 +127,7 @@ func TestShardedCounter_DecrBy(t *testing.T) {
 	t.Run("returns StatusExpired for expired counter", func(t *testing.T) {
 		shc := NewShardedCounter(4)
 		shc.IncrBy("exp_cnt", 10)
-		require.True(t, shc.Expire("exp_cnt", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt", 1))
 
 		time.Sleep(2100 * time.Millisecond)
 
@@ -153,7 +169,7 @@ func TestShardedCounter_Get_and_SetLimit_and_GetLimit(t *testing.T) {
 		shc := NewShardedCounter(4)
 		shc.SetLimit("exp_cnt", 50)
 		shc.IncrBy("exp_cnt", 25)
-		require.True(t, shc.Expire("exp_cnt", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt", 1))
 
 		time.Sleep(2100 * time.Millisecond)
 
@@ -163,7 +179,7 @@ func TestShardedCounter_Get_and_SetLimit_and_GetLimit(t *testing.T) {
 
 		// Set again, expire again, and test GetLimit
 		shc.SetLimit("exp_cnt2", 50)
-		require.True(t, shc.Expire("exp_cnt2", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt2", 1))
 		time.Sleep(2100 * time.Millisecond)
 
 		lim, ok := shc.GetLimit("exp_cnt2")
@@ -174,7 +190,7 @@ func TestShardedCounter_Get_and_SetLimit_and_GetLimit(t *testing.T) {
 	t.Run("set limit on expired counter re-initializes counter", func(t *testing.T) {
 		shc := NewShardedCounter(4)
 		shc.IncrBy("exp_cnt3", 25)
-		require.True(t, shc.Expire("exp_cnt3", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt3", 1))
 
 		time.Sleep(2100 * time.Millisecond)
 
@@ -210,7 +226,7 @@ func TestShardedCounter_Reset(t *testing.T) {
 	t.Run("reset on expired counter returns false", func(t *testing.T) {
 		shc := NewShardedCounter(4)
 		shc.IncrBy("exp_cnt", 10)
-		require.True(t, shc.Expire("exp_cnt", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt", 1))
 
 		time.Sleep(2100 * time.Millisecond)
 
@@ -238,10 +254,10 @@ func TestShardedCounter_Delete(t *testing.T) {
 }
 
 func TestShardedCounter_Expire_and_TTL(t *testing.T) {
-	t.Run("missing counter TTL returns -2 and expire returns false", func(t *testing.T) {
+	t.Run("missing counter TTL returns -2 and expire returns StatusNotFound", func(t *testing.T) {
 		shc := NewShardedCounter(4)
 		assert.Equal(t, int64(-2), shc.TTL("missing"))
-		assert.False(t, shc.Expire("missing", 10))
+		assert.Equal(t, shard.StatusNotFound, shc.Expire("missing", 10))
 	})
 
 	t.Run("counter without TTL returns -1", func(t *testing.T) {
@@ -250,24 +266,26 @@ func TestShardedCounter_Expire_and_TTL(t *testing.T) {
 		assert.Equal(t, int64(-1), shc.TTL("cnt"))
 	})
 
-	t.Run("sets valid TTL", func(t *testing.T) {
+	t.Run("sets valid TTL and rejects invalid TTL", func(t *testing.T) {
 		shc := NewShardedCounter(4)
 		shc.IncrBy("cnt", 1)
 
-		assert.True(t, shc.Expire("cnt", 100))
+		assert.Equal(t, shard.StatusInvalidTTL, shc.Expire("cnt", 0))
+		assert.Equal(t, shard.StatusInvalidTTL, shc.Expire("cnt", -1))
+		assert.Equal(t, shard.StatusSuccess, shc.Expire("cnt", 100))
 		ttl := shc.TTL("cnt")
 		assert.Greater(t, ttl, int64(0))
 		assert.LessOrEqual(t, ttl, int64(100))
 	})
 
-	t.Run("expired counter returns TTL -2 and expire returns false", func(t *testing.T) {
+	t.Run("expired counter returns TTL -2 and expire returns StatusExpired", func(t *testing.T) {
 		shc := NewShardedCounter(4)
 		shc.IncrBy("exp_cnt", 1)
-		require.True(t, shc.Expire("exp_cnt", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1100 * time.Millisecond)
 
-		assert.False(t, shc.Expire("exp_cnt", 10))
+		assert.Equal(t, shard.StatusExpired, shc.Expire("exp_cnt", 10))
 		assert.Equal(t, int64(-2), shc.TTL("exp_cnt"))
 	})
 }
@@ -278,8 +296,8 @@ func TestShardedCounter_CleanExpired(t *testing.T) {
 	shc.IncrBy("exp1", 1)
 	shc.IncrBy("exp2", 1)
 
-	require.True(t, shc.Expire("exp1", 1))
-	require.True(t, shc.Expire("exp2", 1))
+	require.Equal(t, shard.StatusSuccess, shc.Expire("exp1", 1))
+	require.Equal(t, shard.StatusSuccess, shc.Expire("exp2", 1))
 
 	time.Sleep(2100 * time.Millisecond)
 

@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/memap-project/memap-core/shard"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -139,10 +140,10 @@ func TestShardedSet_Card_and_Members(t *testing.T) {
 }
 
 func TestShardedSet_Expire_and_TTL(t *testing.T) {
-	t.Run("missing set TTL returns -2 and Expire returns false", func(t *testing.T) {
+	t.Run("missing set TTL returns -2 and Expire returns StatusNotFound", func(t *testing.T) {
 		shs := NewShardedSet(4)
 		assert.Equal(t, int64(-2), shs.TTL("missing"))
-		assert.False(t, shs.Expire("missing", 10))
+		assert.Equal(t, shard.StatusNotFound, shs.Expire("missing", 10))
 	})
 
 	t.Run("set without TTL returns -1", func(t *testing.T) {
@@ -151,23 +152,25 @@ func TestShardedSet_Expire_and_TTL(t *testing.T) {
 		assert.Equal(t, int64(-1), shs.TTL("s1"))
 	})
 
-	t.Run("sets valid TTL", func(t *testing.T) {
+	t.Run("sets valid TTL and rejects invalid TTL", func(t *testing.T) {
 		shs := NewShardedSet(4)
 		shs.Add("s1", "m", 0)
 
-		assert.True(t, shs.Expire("s1", 100))
+		assert.Equal(t, shard.StatusInvalidTTL, shs.Expire("s1", 0))
+		assert.Equal(t, shard.StatusInvalidTTL, shs.Expire("s1", -1))
+		assert.Equal(t, shard.StatusSuccess, shs.Expire("s1", 100))
 		ttl := shs.TTL("s1")
 		assert.Greater(t, ttl, int64(0))
 		assert.LessOrEqual(t, ttl, int64(100))
 	})
 
-	t.Run("expired set returns TTL -2 and Expire returns false", func(t *testing.T) {
+	t.Run("expired set returns TTL -2 and Expire returns StatusExpired", func(t *testing.T) {
 		shs := NewShardedSet(4)
 		shs.Add("exp_s", "m", 1)
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1100 * time.Millisecond)
 
-		assert.False(t, shs.Expire("exp_s", 10))
+		assert.Equal(t, shard.StatusExpired, shs.Expire("exp_s", 10))
 		assert.Equal(t, int64(-2), shs.TTL("exp_s"))
 	})
 }

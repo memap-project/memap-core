@@ -4,19 +4,22 @@ package ns
 // CSLimit sets or updates the upper limit of a counter in the specified namespace.
 // Initializes the counter if it does not exist or is expired.
 // If ns is empty, the default namespace is used.
+// Returns [ErrKeyTooLarge] if key exceeds MaxKeyBytes.
+// Returns [ErrInvalidArg] if limit is negative.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) CSLimit(ns, key string, limit int64) error {
+	if err := nm.validateKey(key); err != nil {
+		return err
+	}
 	if ns == "" {
-		nm.defaultNs.shcounter.SetLimit(key, limit)
-		return nil
+		return statusToError(nm.defaultNs.shcounter.SetLimit(key, limit))
 	}
 
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	n.shcounter.SetLimit(key, limit)
-	return nil
+	return statusToError(n.shcounter.SetLimit(key, limit))
 }
 
 // CGLimit returns the upper limit of a counter in the specified namespace.
@@ -84,25 +87,18 @@ func (nm *NamespaceManager) CDel(ns, key string) error {
 
 // CExpire sets the expiration time for the counter in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is non-positive or overflows.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 // Returns [ErrKeyNotFound] if the counter does not exist or is expired.
 func (nm *NamespaceManager) CExpire(ns, key string, ttl int64) error {
 	if ns == "" {
-		ok := nm.defaultNs.shcounter.Expire(key, ttl)
-		if !ok {
-			return ErrKeyNotFound
-		}
-		return nil
+		return statusToError(nm.defaultNs.shcounter.Expire(key, ttl))
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	ok := n.shcounter.Expire(key, ttl)
-	if !ok {
-		return ErrKeyNotFound
-	}
-	return nil
+	return statusToError(n.shcounter.Expire(key, ttl))
 }
 
 // CTTL returns the time-to-live of the counter in seconds from the specified namespace.
@@ -132,9 +128,14 @@ func (nm *NamespaceManager) CTTL(ns, key string) (int64, error) {
 // CIncrBy increments the counter by alpha in the specified namespace.
 // Initializes the counter if it does not exist or is expired.
 // If ns is empty, the default namespace is used.
+// Returns [ErrKeyTooLarge] if key exceeds MaxKeyBytes.
+// Returns [ErrInvalidArg] if alpha is negative.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
-// Returns [ErrLimitExceeded] if the increment exceeds limit.
+// Returns [ErrLimitExceeded] if the increment overflows or exceeds limit.
 func (nm *NamespaceManager) CIncrBy(ns, key string, alpha int64) (int64, error) {
+	if err := nm.validateKey(key); err != nil {
+		return 0, err
+	}
 	if ns == "" {
 		count, status := nm.defaultNs.shcounter.IncrBy(key, alpha)
 		return count, statusToError(status)

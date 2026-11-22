@@ -1,24 +1,43 @@
 package ns
 
-import "github.com/memap-project/memap-core/tsmap"
+import "context"
 
 // GetNs retrieves a namespace by name.
 // Returns the namespace and true if found, nil and false otherwise.
 func (nm *NamespaceManager) GetNs(name string) (*Namespace, bool) {
-	return nm.namespaces.Load().Load(name)
+	return nm.registry.Load().m.Load(name)
 }
 
 // Create creates a new namespace with the given name.
+// Returns [ErrKeyTooLarge] if name exceeds MaxKeyBytes.
 // Returns [ErrNamespaceAlreadyExists] if the namespace already exists.
+// Returns [ErrNamespaceLimitExceeded] if MaxNamespaces is reached.
 func (nm *NamespaceManager) Create(name string) error {
-	nsMap := nm.namespaces.Load()
-	if _, exists := nsMap.Load(name); exists {
+	if err := nm.validateKey(name); err != nil {
+		return err
+	}
+	reg := nm.registry.Load()
+	if _, exists := reg.m.Load(name); exists {
 		return ErrNamespaceAlreadyExists
 	}
+	if maxNS := int64(nm.cfg.MaxNamespaces); maxNS > 0 {
+		for {
+			cur := reg.count.Load()
+			if cur >= maxNS {
+				return ErrNamespaceLimitExceeded
+			}
+			if reg.count.CompareAndSwap(cur, cur+1) {
+				break
+			}
+		}
+	} else {
+		reg.count.Add(1)
+	}
+
 	cfg := nm.cfg
 	ns := NewNamespace(&cfg)
-	_, loaded := nsMap.LoadOrStore(name, ns)
-	if loaded {
+	if _, loaded := reg.m.LoadOrStore(name, ns); loaded {
+		reg.count.Add(-1)
 		return ErrNamespaceAlreadyExists
 	}
 	return nil
@@ -26,14 +45,17 @@ func (nm *NamespaceManager) Create(name string) error {
 
 // Drop deletes a namespace by name.
 func (nm *NamespaceManager) Drop(name string) error {
-	nm.namespaces.Load().Delete(name)
+	reg := nm.registry.Load()
+	if _, deleted := reg.m.LoadAndDelete(name); deleted {
+		reg.count.Add(-1)
+	}
 	return nil
 }
 
 // Erase flushes all data in the default namespace and drops all custom namespaces.
 func (nm *NamespaceManager) Erase() {
 	nm.flushDefaultNs()
-	nm.namespaces.Store(&tsmap.TypedSyncMap[string, *Namespace]{})
+	nm.registry.Store(&nsRegistry{})
 }
 
 // Flush removes all keys across all namespaces including the default namespace.
@@ -49,7 +71,7 @@ func (nm *NamespaceManager) flushDefaultNs() {
 
 // flushCustomNamespaces flushes all keys in all custom namespaces.
 func (nm *NamespaceManager) flushCustomNamespaces() {
-	nm.namespaces.Load().Range(func(k string, v *Namespace) bool {
+	nm.registry.Load().m.Range(func(k string, v *Namespace) bool {
 		v.Flush()
 		return true
 	})
@@ -57,19 +79,23 @@ func (nm *NamespaceManager) flushCustomNamespaces() {
 
 // CleanExpired removes all expired keys across all namespaces including the default namespace.
 func (nm *NamespaceManager) CleanExpired() {
-	nm.cleanDefaultNs()
-	nm.cleanCustomNamespaces()
+	nm.CleanExpiredCtx(context.Background())
 }
 
-// cleanDefaultNs removes all expired keys in the default namespace.
-func (nm *NamespaceManager) cleanDefaultNs() {
-	nm.defaultNs.CleanExpired()
-}
-
-// cleanCustomNamespaces removes all expired keys in all custom namespaces.
-func (nm *NamespaceManager) cleanCustomNamespaces() {
-	nm.namespaces.Load().Range(func(k string, v *Namespace) bool {
-		v.CleanExpired()
+// CleanExpiredCtx removes all expired keys across all namespaces while respecting ctx cancellation.
+func (nm *NamespaceManager) CleanExpiredCtx(ctx context.Context) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	nm.defaultNs.CleanExpiredCtx(ctx)
+	nm.registry.Load().m.Range(func(_ string, v *Namespace) bool {
+		if ctx.Err() != nil {
+			return false
+		}
+		v.CleanExpiredCtx(ctx)
 		return true
 	})
 }

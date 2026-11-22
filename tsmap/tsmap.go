@@ -35,6 +35,21 @@ func (tm *TypedSyncMap[K, V]) Delete(key K) {
 	tm.m.Delete(key)
 }
 
+// LoadAndDelete deletes the value for a key, returning the previous value if any.
+// The loaded result reports whether the key was present.
+func (tm *TypedSyncMap[K, V]) LoadAndDelete(key K) (V, bool) {
+	actual, loaded := tm.m.LoadAndDelete(key)
+	if !loaded {
+		var zero V
+		return zero, false
+	}
+	if actual == nil {
+		var zero V
+		return zero, true
+	}
+	return actual.(V), true
+}
+
 // Range calls the provided function for each key-value pair in the map.
 // If fn returns false, Range stops iteration.
 func (tm *TypedSyncMap[K, V]) Range(fn func(key K, value V) bool) {

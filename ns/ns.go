@@ -1,7 +1,7 @@
 package ns
 
 import (
-	"sync"
+	"context"
 
 	"github.com/memap-project/memap-core/config"
 	"github.com/memap-project/memap-core/shard/shcounter"
@@ -11,10 +11,8 @@ import (
 	"github.com/memap-project/memap-core/shard/shset"
 )
 
-// Namespace represents an isolated container storing maps, hashes, counters, and ring buffers.
+// Namespace represents an isolated container storing maps, hashes, counters, ring buffers, and sets.
 type Namespace struct {
-	mu        sync.RWMutex
-	cfg       *config.NamespaceConfig
 	shmap     *shmap.ShardedMap
 	shhash    *shhash.ShardedHash
 	shcounter *shcounter.ShardedCounter
@@ -29,24 +27,31 @@ func NewNamespace(cfg *config.NamespaceConfig) *Namespace {
 		def := config.DefaultConfig().Namespace
 		cfg = &def
 	}
+	maxKeys := cfg.MaxKeysPerShard
 	return &Namespace{
-		mu:        sync.RWMutex{},
-		cfg:       cfg,
-		shmap:     shmap.NewShardedMap(cfg.ShardCounts.Shmap),
-		shhash:    shhash.NewShardedHash(cfg.ShardCounts.Shhash),
-		shcounter: shcounter.NewShardedCounter(cfg.ShardCounts.Shcounter),
-		shrbuffer: shrbuffer.NewShardedRingBuffer(cfg.ShardCounts.Shrbuffer, cfg.MaxRingBufferCapacity),
-		shset:     shset.NewShardedSet(cfg.ShardCounts.Shset),
+		shmap:     shmap.NewShardedMap(cfg.ShardCounts.Shmap, maxKeys),
+		shhash:    shhash.NewShardedHash(cfg.ShardCounts.Shhash, maxKeys),
+		shcounter: shcounter.NewShardedCounter(cfg.ShardCounts.Shcounter, maxKeys),
+		shrbuffer: shrbuffer.NewShardedRingBufferWithLimits(cfg.ShardCounts.Shrbuffer, cfg.MaxRingBufferCapacity, maxKeys),
+		shset:     shset.NewShardedSet(cfg.ShardCounts.Shset, maxKeys),
 	}
 }
 
 // CleanExpired removes expired keys across all storage components in the namespace.
 func (n *Namespace) CleanExpired() {
-	n.shmap.CleanExpired()
-	n.shhash.CleanExpired()
-	n.shcounter.CleanExpired()
-	n.shrbuffer.CleanExpired()
-	n.shset.CleanExpired()
+	n.CleanExpiredCtx(context.Background())
+}
+
+// CleanExpiredCtx removes expired keys across all storage components while respecting ctx cancellation.
+func (n *Namespace) CleanExpiredCtx(ctx context.Context) {
+	if ctx.Err() != nil {
+		return
+	}
+	n.shmap.CleanExpiredCtx(ctx)
+	n.shhash.CleanExpiredCtx(ctx)
+	n.shcounter.CleanExpiredCtx(ctx)
+	n.shrbuffer.CleanExpiredCtx(ctx)
+	n.shset.CleanExpiredCtx(ctx)
 }
 
 // Flush removes all keys across all storage components in the namespace.

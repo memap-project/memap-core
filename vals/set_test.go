@@ -1,9 +1,9 @@
 package vals
 
 import (
+	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,7 +16,7 @@ func TestSet_NewSet(t *testing.T) {
 	assert.Equal(t, int64(0), s.Card())
 	assert.Empty(t, s.Members())
 	assert.False(t, s.IsExpired())
-	assert.Equal(t, int64(0), s.TTL())
+	assert.Equal(t, int64(-1), s.TTL())
 }
 
 func TestSet_Add_and_IsMember(t *testing.T) {
@@ -83,12 +83,13 @@ func TestSet_Expiration(t *testing.T) {
 	t.Run("initial state without expiration", func(t *testing.T) {
 		s := NewSet()
 		assert.False(t, s.IsExpired())
-		assert.Equal(t, int64(0), s.TTL())
+		assert.Equal(t, int64(-1), s.TTL())
 	})
 
-	t.Run("negative TTL rejected", func(t *testing.T) {
+	t.Run("non-positive TTL rejected", func(t *testing.T) {
 		s := NewSet()
 		assert.False(t, s.Expire(-1))
+		assert.False(t, s.Expire(0))
 		assert.False(t, s.IsExpired())
 	})
 
@@ -102,15 +103,29 @@ func TestSet_Expiration(t *testing.T) {
 
 	t.Run("detects expired state", func(t *testing.T) {
 		s := NewSet()
-		s.expiresAt.Store(time.Now().Unix() - 1)
+		s.expiresAt.Store(MonotonicNow() - 1)
 		assert.True(t, s.IsExpired())
+		assert.Equal(t, int64(-2), s.TTL())
 	})
 
 	t.Run("fails to expire when already expired", func(t *testing.T) {
 		s := NewSet()
-		s.expiresAt.Store(time.Now().Unix() - 1)
+		s.expiresAt.Store(MonotonicNow() - 1)
 		assert.False(t, s.Expire(60))
 	})
+}
+
+func TestSet_ShrinkAfterMassRemove(t *testing.T) {
+	s := NewSet()
+	for i := range 300 {
+		s.Add(fmt.Sprintf("m:%d", i))
+	}
+	assert.Equal(t, 300, s.peakLen)
+	for i := range 250 {
+		s.Remove(fmt.Sprintf("m:%d", i))
+	}
+	assert.Equal(t, int64(50), s.Card())
+	assert.Less(t, s.peakLen, 300)
 }
 
 func TestSet_Concurrency(t *testing.T) {

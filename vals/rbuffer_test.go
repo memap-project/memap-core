@@ -3,7 +3,6 @@ package vals
 import (
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +18,7 @@ func TestRingBuffer_NewRingBuffer(t *testing.T) {
 		assert.True(t, rb.IsEmpty())
 		assert.False(t, rb.IsFull())
 		assert.False(t, rb.IsExpired())
-		assert.Equal(t, int64(0), rb.TTL())
+		assert.Equal(t, int64(-1), rb.TTL())
 	})
 
 	t.Run("supports int64 generic type", func(t *testing.T) {
@@ -229,7 +228,7 @@ func TestRingBuffer_Peek_and_Back(t *testing.T) {
 }
 
 func TestRingBuffer_Reset(t *testing.T) {
-	t.Run("resets buffer to empty state", func(t *testing.T) {
+	t.Run("resets buffer to empty state and clears backing slice references", func(t *testing.T) {
 		rb := NewRingBuffer[string](5)
 		rb.Push("a")
 		rb.Push("b")
@@ -239,9 +238,24 @@ func TestRingBuffer_Reset(t *testing.T) {
 		assert.Equal(t, int64(0), rb.Len())
 		assert.True(t, rb.IsEmpty())
 		assert.False(t, rb.IsFull())
+		for i, elem := range rb.buf {
+			assert.Empty(t, elem, "slot %d should be cleared after Reset", i)
+		}
 
 		_, ok := rb.Pop()
 		assert.False(t, ok)
+	})
+
+	t.Run("pop clears popped slot reference", func(t *testing.T) {
+		rb := NewRingBuffer[string](3)
+		rb.Push("large-payload-1")
+		rb.Push("large-payload-2")
+
+		val, ok := rb.Pop()
+		require.True(t, ok)
+		assert.Equal(t, "large-payload-1", val)
+		assert.Empty(t, rb.buf[0], "popped slot must be zeroed to allow GC")
+		assert.Equal(t, "large-payload-2", rb.buf[1])
 	})
 }
 
@@ -249,12 +263,13 @@ func TestRingBuffer_Expiration(t *testing.T) {
 	t.Run("initial state without expiration", func(t *testing.T) {
 		rb := NewRingBuffer[string](5)
 		assert.False(t, rb.IsExpired())
-		assert.Equal(t, int64(0), rb.TTL())
+		assert.Equal(t, int64(-1), rb.TTL())
 	})
 
-	t.Run("negative TTL rejected", func(t *testing.T) {
+	t.Run("non-positive TTL rejected", func(t *testing.T) {
 		rb := NewRingBuffer[string](5)
 		assert.False(t, rb.Expire(-1))
+		assert.False(t, rb.Expire(0))
 		assert.False(t, rb.IsExpired())
 	})
 
@@ -268,13 +283,14 @@ func TestRingBuffer_Expiration(t *testing.T) {
 
 	t.Run("detects expired state", func(t *testing.T) {
 		rb := NewRingBuffer[string](5)
-		rb.expiresAt.Store(time.Now().Unix() - 1)
+		rb.expiresAt.Store(MonotonicNow() - 1)
 		assert.True(t, rb.IsExpired())
+		assert.Equal(t, int64(-2), rb.TTL())
 	})
 
 	t.Run("fails to expire when already expired", func(t *testing.T) {
 		rb := NewRingBuffer[string](5)
-		rb.expiresAt.Store(time.Now().Unix() - 1)
+		rb.expiresAt.Store(MonotonicNow() - 1)
 		assert.False(t, rb.Expire(60))
 	})
 }

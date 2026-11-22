@@ -14,4 +14,6 @@ const (
 	StatusLimitExceeded
 	StatusFieldNotFound
 	StatusInvalidCapacity
+	StatusInvalidTTL
+	StatusInvalidArg
 )

@@ -1,6 +1,9 @@
 package shmap
 
 import (
+	"context"
+	"hash/maphash"
+
 	"github.com/memap-project/memap-core/shard"
 	"github.com/memap-project/memap-core/vals"
 )
@@ -8,26 +11,34 @@ import (
 // ShardedMap is a partitioned map storing key-value pairs across multiple shards.
 type ShardedMap struct {
 	shardCount uint8
+	seed       maphash.Seed
+	mask       uint64
 	shards     []*shard.Shard[*vals.Item]
 }
 
-// NewShardedMap creates a new ShardedMap with the given shard count.
+// NewShardedMap creates a new ShardedMap with the given shard count and optional per-shard key limit.
 // shardCount is normalized to a power of two in [1, 128].
-func NewShardedMap(shardCount uint8) *ShardedMap {
+func NewShardedMap(shardCount uint8, maxKeysPerShard ...int) *ShardedMap {
 	shardCount = shard.NormalizeShardCount(shardCount)
+	var limit int
+	if len(maxKeysPerShard) > 0 && maxKeysPerShard[0] > 0 {
+		limit = maxKeysPerShard[0]
+	}
 	shards := make([]*shard.Shard[*vals.Item], shardCount)
 	for i := range shards {
-		shards[i] = shard.NewShard[*vals.Item]()
+		shards[i] = shard.NewShard[*vals.Item](limit)
 	}
 	return &ShardedMap{
 		shardCount: shardCount,
+		seed:       maphash.MakeSeed(),
+		mask:       uint64(shardCount - 1),
 		shards:     shards,
 	}
 }
 
-// getShard returns the shard corresponding to the given key based on FNV-1a hash.
+// getShard returns the shard corresponding to the given key using a per-instance seeded hash.
 func (shm *ShardedMap) getShard(key string) *shard.Shard[*vals.Item] {
-	return shm.shards[shard.ShardIndex(key, shm.shardCount)]
+	return shm.shards[shard.SeededShardIndex(shm.seed, key, shm.mask)]
 }
 
 // Get retrieves the value of the key from the sharded map.
@@ -39,7 +50,7 @@ func (shm *ShardedMap) Get(key string) (string, bool) {
 		return "", false
 	}
 	if item.IsExpired() {
-		sh.Delete(key)
+		sh.DeleteIf(key, func(cur *vals.Item) bool { return cur == item })
 		return "", false
 	}
 	return item.GetValue(), true
@@ -51,7 +62,7 @@ func (shm *ShardedMap) Set(key, value string, ttl int64) {
 	if ttl > 0 {
 		i.Expire(ttl)
 	}
-	shm.getShard(key).Set(key, i)
+	shm.getShard(key).SetWithEvictCheck(key, i, (*vals.Item).IsExpired)
 }
 
 // Delete removes the key from the sharded map.
@@ -60,16 +71,18 @@ func (shm *ShardedMap) Delete(key string) {
 }
 
 // Expire sets the expiration time for the key.
-// Returns true if the key exists and expiration was set.
-// Returns false if the key does not exist or is already expired.
-func (shm *ShardedMap) Expire(key string, ttl int64) bool {
-	ok := shm.getShard(key).Update(key, func(i *vals.Item) bool {
-		if i.IsExpired() {
-			return false
-		}
-		return i.Expire(ttl)
-	})
-	return ok
+// Returns StatusSuccess if expiration was set, StatusInvalidTTL if ttl is invalid or overflows,
+// or StatusNotFound/StatusExpired if the key does not exist or is already expired.
+func (shm *ShardedMap) Expire(key string, ttl int64) shard.Status {
+	if !vals.IsValidTTL(ttl) {
+		return shard.StatusInvalidTTL
+	}
+	now := vals.MonotonicNow()
+	return shm.getShard(key).ExpireInPlace(
+		key,
+		func(i *vals.Item) bool { return i.IsExpiredAt(now) },
+		func(i *vals.Item) bool { return i.ExpireAt(now, ttl) },
+	)
 }
 
 // TTL returns the time-to-live of the key in seconds.
@@ -81,21 +94,28 @@ func (shm *ShardedMap) TTL(key string) int64 {
 	if !ok {
 		return -2
 	}
-	if item.IsExpired() {
-		sh.Delete(key)
+	ttl := item.TTL()
+	if ttl == -2 {
+		sh.DeleteIf(key, func(cur *vals.Item) bool { return cur == item })
 		return -2
 	}
-	if item.TTL() == 0 {
-		return -1
-	}
-	return item.TTL()
+	return ttl
 }
 
 // CleanExpired removes all expired items across all shards.
 func (shm *ShardedMap) CleanExpired() {
+	shm.CleanExpiredCtx(context.Background())
+}
+
+// CleanExpiredCtx removes all expired items across all shards while respecting ctx cancellation.
+func (shm *ShardedMap) CleanExpiredCtx(ctx context.Context) {
 	for _, sh := range shm.shards {
-		sh.Clean(func(key string, item *vals.Item) bool {
-			return item.IsExpired()
+		if ctx.Err() != nil {
+			return
+		}
+		now := vals.MonotonicNow()
+		sh.CleanCtx(ctx, func(_ string, item *vals.Item) bool {
+			return item.IsExpiredAt(now)
 		})
 	}
 }

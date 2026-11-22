@@ -2,8 +2,15 @@ package ns
 
 // SAdd adds a member to a set in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrKeyTooLarge] / [ErrValueTooLarge] if key or member exceeds configured limits.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) SAdd(ns, key, member string, ttl int64) error {
+	if err := nm.validateKey(key); err != nil {
+		return err
+	}
+	if err := nm.validateValue(member); err != nil {
+		return err
+	}
 	if ns == "" {
 		nm.defaultNs.shset.Add(key, member, ttl)
 		return nil
@@ -94,25 +101,18 @@ func (nm *NamespaceManager) SMembers(ns, key string) ([]string, error) {
 
 // SExpire sets the expiration time for the set of the given key in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is non-positive or overflows.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 // Returns [ErrKeyNotFound] if the set does not exist or is expired.
 func (nm *NamespaceManager) SExpire(ns, key string, ttl int64) error {
 	if ns == "" {
-		ok := nm.defaultNs.shset.Expire(key, ttl)
-		if !ok {
-			return ErrKeyNotFound
-		}
-		return nil
+		return statusToError(nm.defaultNs.shset.Expire(key, ttl))
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	ok := n.shset.Expire(key, ttl)
-	if !ok {
-		return ErrKeyNotFound
-	}
-	return nil
+	return statusToError(n.shset.Expire(key, ttl))
 }
 
 // STTL returns the time-to-live of the set for the given key in seconds from the specified namespace.

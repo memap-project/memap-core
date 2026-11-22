@@ -1,17 +1,16 @@
 package vals
 
 import (
+	"maps"
 	"sync"
-	"sync/atomic"
-	"time"
 )
 
-// Set is a thread-safe set for string members with optional expiration.
-// If expiresAt is 0, the Set has no expiration.
+// Set is a thread-safe set for string members with optional monotonic expiration.
 type Set struct {
-	mu        sync.RWMutex
-	set       map[string]struct{}
-	expiresAt atomic.Int64
+	expiry
+	mu      sync.RWMutex
+	set     map[string]struct{}
+	peakLen int
 }
 
 // NewSet creates a new Set.
@@ -22,51 +21,29 @@ func NewSet() *Set {
 	}
 }
 
-// IsExpired returns true if the Set has an expiration time and is expired.
-// Returns false if the Set has no expiration time or is not yet expired.
-func (s *Set) IsExpired() bool {
-	exp := s.expiresAt.Load()
-	if exp == 0 {
-		return false
-	}
-	return time.Now().Unix() > exp
-}
-
-// Expire sets the expiration time for the Set.
-// Returns false if the Set is already expired or if ttl is negative.
-func (s *Set) Expire(ttl int64) bool {
-	if s.IsExpired() {
-		return false
-	}
-	if ttl < 0 {
-		return false
-	}
-	s.expiresAt.Store(time.Now().Unix() + ttl)
-	return true
-}
-
-// TTL returns the remaining time-to-live in seconds.
-// Returns 0 if the Set has no expiration time.
-func (s *Set) TTL() int64 {
-	exp := s.expiresAt.Load()
-	if exp == 0 {
-		return 0
-	}
-	return exp - time.Now().Unix()
-}
-
 // Add adds a member to the Set.
 func (s *Set) Add(m string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.set[m] = struct{}{}
+	if len(s.set) > s.peakLen {
+		s.peakLen = len(s.set)
+	}
 }
 
-// Remove removes a member from the Set.
+// Remove removes a member from the Set and shrinks the underlying map
+// if occupancy drops significantly below its peak size.
 func (s *Set) Remove(m string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.set, m)
+	if s.peakLen >= mapShrinkMinPeak && len(s.set)*4 <= s.peakLen {
+		newCap := max(len(s.set), 8)
+		shrunk := make(map[string]struct{}, newCap)
+		maps.Copy(shrunk, s.set)
+		s.set = shrunk
+		s.peakLen = len(s.set)
+	}
 }
 
 // IsMember returns true if the member is in the Set.

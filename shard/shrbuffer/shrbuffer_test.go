@@ -56,10 +56,18 @@ func TestShardedRingBuffer_Init(t *testing.T) {
 		assert.False(t, ok)
 	})
 
-	t.Run("initializes buffer with TTL", func(t *testing.T) {
+	t.Run("initializes buffer with TTL and replaces expired buffer", func(t *testing.T) {
 		shrb := NewShardedRingBuffer(4)
-		assert.Equal(t, shard.StatusSuccess, shrb.Init("rb_ttl", 5, 100))
+		assert.Equal(t, shard.StatusSuccess, shrb.Init("rb_ttl", 5, 1))
 		assert.Greater(t, shrb.TTL("rb_ttl"), int64(0))
+
+		time.Sleep(1100 * time.Millisecond)
+
+		// Expired buffer must allow re-initialization without waiting for Cleaner
+		assert.Equal(t, shard.StatusSuccess, shrb.Init("rb_ttl", 10, 0))
+		c, ok := shrb.Cap("rb_ttl")
+		assert.True(t, ok)
+		assert.Equal(t, int64(10), c)
 	})
 }
 
@@ -319,10 +327,10 @@ func TestShardedRingBuffer_Delete(t *testing.T) {
 }
 
 func TestShardedRingBuffer_Expire_and_TTL(t *testing.T) {
-	t.Run("missing buffer TTL is -2 and Expire returns false", func(t *testing.T) {
+	t.Run("missing buffer TTL is -2 and Expire returns StatusNotFound", func(t *testing.T) {
 		shrb := NewShardedRingBuffer(4)
 		assert.Equal(t, int64(-2), shrb.TTL("missing"))
-		assert.False(t, shrb.Expire("missing", 10))
+		assert.Equal(t, shard.StatusNotFound, shrb.Expire("missing", 10))
 	})
 
 	t.Run("buffer without expiration returns -1", func(t *testing.T) {
@@ -331,23 +339,25 @@ func TestShardedRingBuffer_Expire_and_TTL(t *testing.T) {
 		assert.Equal(t, int64(-1), shrb.TTL("rb"))
 	})
 
-	t.Run("sets valid TTL", func(t *testing.T) {
+	t.Run("sets valid TTL and rejects invalid TTL", func(t *testing.T) {
 		shrb := NewShardedRingBuffer(4)
 		require.Equal(t, shard.StatusSuccess, shrb.Init("rb", 5, 0))
 
-		assert.True(t, shrb.Expire("rb", 100))
+		assert.Equal(t, shard.StatusInvalidTTL, shrb.Expire("rb", 0))
+		assert.Equal(t, shard.StatusInvalidTTL, shrb.Expire("rb", -5))
+		assert.Equal(t, shard.StatusSuccess, shrb.Expire("rb", 100))
 		ttl := shrb.TTL("rb")
 		assert.Greater(t, ttl, int64(0))
 		assert.LessOrEqual(t, ttl, int64(100))
 	})
 
-	t.Run("expired buffer returns TTL -2 and Expire returns false", func(t *testing.T) {
+	t.Run("expired buffer returns TTL -2 and Expire returns StatusExpired", func(t *testing.T) {
 		shrb := NewShardedRingBuffer(4)
 		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb", 5, 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1100 * time.Millisecond)
 
-		assert.False(t, shrb.Expire("exp_rb", 10))
+		assert.Equal(t, shard.StatusExpired, shrb.Expire("exp_rb", 10))
 		assert.Equal(t, int64(-2), shrb.TTL("exp_rb"))
 	})
 }

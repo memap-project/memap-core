@@ -1,56 +1,76 @@
 package shset
 
 import (
+	"context"
+	"hash/maphash"
+
 	"github.com/memap-project/memap-core/shard"
 	"github.com/memap-project/memap-core/vals"
 )
 
-// ShardedHash is a partitioned set storing members across multiple shards.
+// ShardedSet is a partitioned set storing members across multiple shards.
 type ShardedSet struct {
 	shardCount uint8
+	seed       maphash.Seed
+	mask       uint64
 	shards     []*shard.Shard[*vals.Set]
 }
 
-// NewShardedSet creates a new ShardedSet with the given number of shards.
+// NewShardedSet creates a new ShardedSet with the given number of shards and optional per-shard key limit.
 // shardCount is normalized to a power of two in [1, 128].
-func NewShardedSet(shardCount uint8) *ShardedSet {
+func NewShardedSet(shardCount uint8, maxKeysPerShard ...int) *ShardedSet {
 	shardCount = shard.NormalizeShardCount(shardCount)
+	var limit int
+	if len(maxKeysPerShard) > 0 && maxKeysPerShard[0] > 0 {
+		limit = maxKeysPerShard[0]
+	}
 	shards := make([]*shard.Shard[*vals.Set], shardCount)
 	for i := range shards {
-		shards[i] = shard.NewShard[*vals.Set]()
+		shards[i] = shard.NewShard[*vals.Set](limit)
 	}
 	return &ShardedSet{
 		shardCount: shardCount,
+		seed:       maphash.MakeSeed(),
+		mask:       uint64(shardCount - 1),
 		shards:     shards,
 	}
 }
 
-// getShard returns the shard corresponding to the given key based on FNV-1a hash.
+// getShard returns the shard corresponding to the given key using a per-instance seeded hash.
 func (s *ShardedSet) getShard(key string) *shard.Shard[*vals.Set] {
-	return s.shards[shard.ShardIndex(key, s.shardCount)]
+	return s.shards[shard.SeededShardIndex(s.seed, key, s.mask)]
 }
 
 // Add adds a member to the Set for the given key.
-// If the Set does not exist or is expired, a new Set is created.
+// Atomically creates or replaces the Set if it does not exist or is expired.
 func (s *ShardedSet) Add(key string, member string, ttl int64) {
 	sh := s.getShard(key)
-	set, ok := sh.GetOrInit(key, vals.NewSet)
-	if ok && set.IsExpired() {
-		set = vals.NewSet()
-		sh.Set(key, set)
-	}
-	if ttl > 0 {
+	set, existed := sh.GetOrReplace(key, (*vals.Set).IsExpired, func() *vals.Set {
+		ns := vals.NewSet()
+		if ttl > 0 {
+			ns.Expire(ttl)
+		}
+		return ns
+	})
+	if existed && ttl > 0 {
 		set.Expire(ttl)
 	}
 	set.Add(member)
 }
 
 // Remove removes a member from the Set for the given key.
+// Lazily deletes the set entry if it is already expired.
 func (s *ShardedSet) Remove(key string, member string) {
-	set, ok := s.getShard(key).Get(key)
-	if ok {
-		set.Remove(member)
+	sh := s.getShard(key)
+	set, ok := sh.Get(key)
+	if !ok {
+		return
 	}
+	if set.IsExpired() {
+		sh.DeleteIf(key, func(cur *vals.Set) bool { return cur == set })
+		return
+	}
+	set.Remove(member)
 }
 
 // IsMember returns true if the member is a member of the Set for the given key.
@@ -61,7 +81,7 @@ func (s *ShardedSet) IsMember(key string, member string) bool {
 		return false
 	}
 	if set.IsExpired() {
-		sh.Delete(key)
+		sh.DeleteIf(key, func(cur *vals.Set) bool { return cur == set })
 		return false
 	}
 	return set.IsMember(member)
@@ -76,38 +96,40 @@ func (s *ShardedSet) Card(key string) (int64, bool) {
 		return 0, false
 	}
 	if set.IsExpired() {
-		sh.Delete(key)
+		sh.DeleteIf(key, func(cur *vals.Set) bool { return cur == set })
 		return 0, false
 	}
 	return set.Card(), true
 }
 
 // Members returns the members of the Set for the given key.
-// Returns an empty slice and false if the Set does not exist or is expired.
+// Returns nil and false if the Set does not exist or is expired.
 func (s *ShardedSet) Members(key string) ([]string, bool) {
 	sh := s.getShard(key)
 	set, ok := sh.Get(key)
 	if !ok {
-		return []string{}, false
+		return nil, false
 	}
 	if set.IsExpired() {
-		sh.Delete(key)
-		return []string{}, false
+		sh.DeleteIf(key, func(cur *vals.Set) bool { return cur == set })
+		return nil, false
 	}
 	return set.Members(), true
 }
 
 // Expire sets the expiration time for the Set of the given key.
-// Returns true if the Set exists and expiration was set.
-// Returns false if the Set does not exist or is already expired.
-func (s *ShardedSet) Expire(key string, ttl int64) bool {
-	ok := s.getShard(key).Update(key, func(h *vals.Set) bool {
-		if h.IsExpired() {
-			return false
-		}
-		return h.Expire(ttl)
-	})
-	return ok
+// Returns StatusSuccess if expiration was set, StatusInvalidTTL if ttl is invalid or overflows,
+// or StatusNotFound/StatusExpired if the Set does not exist or is already expired.
+func (s *ShardedSet) Expire(key string, ttl int64) shard.Status {
+	if !vals.IsValidTTL(ttl) {
+		return shard.StatusInvalidTTL
+	}
+	now := vals.MonotonicNow()
+	return s.getShard(key).ExpireInPlace(
+		key,
+		func(set *vals.Set) bool { return set.IsExpiredAt(now) },
+		func(set *vals.Set) bool { return set.ExpireAt(now, ttl) },
+	)
 }
 
 // TTL returns the time-to-live of the Set for the given key in seconds.
@@ -119,28 +141,35 @@ func (s *ShardedSet) TTL(key string) int64 {
 	if !ok {
 		return -2
 	}
-	if set.IsExpired() {
-		sh.Delete(key)
+	ttl := set.TTL()
+	if ttl == -2 {
+		sh.DeleteIf(key, func(cur *vals.Set) bool { return cur == set })
 		return -2
 	}
-	if set.TTL() == 0 {
-		return -1
-	}
-	return set.TTL()
+	return ttl
 }
 
 // CleanExpired removes all expired sets across all shards.
 func (s *ShardedSet) CleanExpired() {
-	for _, shard := range s.shards {
-		shard.Clean(func(_ string, set *vals.Set) bool {
-			return set.IsExpired()
+	s.CleanExpiredCtx(context.Background())
+}
+
+// CleanExpiredCtx removes all expired sets across all shards while respecting ctx cancellation.
+func (s *ShardedSet) CleanExpiredCtx(ctx context.Context) {
+	for _, sh := range s.shards {
+		if ctx.Err() != nil {
+			return
+		}
+		now := vals.MonotonicNow()
+		sh.CleanCtx(ctx, func(_ string, set *vals.Set) bool {
+			return set.IsExpiredAt(now)
 		})
 	}
 }
 
 // Flush removes all sets across all shards.
 func (s *ShardedSet) Flush() {
-	for _, shard := range s.shards {
-		shard.Flush()
+	for _, sh := range s.shards {
+		sh.Flush()
 	}
 }

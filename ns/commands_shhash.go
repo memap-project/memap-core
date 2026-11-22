@@ -25,8 +25,12 @@ func (nm *NamespaceManager) HGet(ns, key string) (map[string]string, error) {
 
 // HSet creates or overwrites a hash for the given key with optional TTL in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrKeyTooLarge] if key exceeds MaxKeyBytes.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) HSet(ns, key string, ttl int64) error {
+	if err := nm.validateKey(key); err != nil {
+		return err
+	}
 	if ns == "" {
 		nm.defaultNs.shhash.Set(key, ttl)
 		return nil
@@ -57,25 +61,18 @@ func (nm *NamespaceManager) HDel(ns, key string) error {
 
 // HExpire sets the expiration time for the hash of the given key in the specified namespace.
 // If ns is empty, the default namespace is used.
+// Returns [ErrInvalidTTL] if ttl is non-positive or overflows.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 // Returns [ErrKeyNotFound] if the hash does not exist or is expired.
 func (nm *NamespaceManager) HExpire(ns, key string, ttl int64) error {
 	if ns == "" {
-		ok := nm.defaultNs.shhash.Expire(key, ttl)
-		if !ok {
-			return ErrKeyNotFound
-		}
-		return nil
+		return statusToError(nm.defaultNs.shhash.Expire(key, ttl))
 	}
 	n, exists := nm.GetNs(ns)
 	if !exists {
 		return ErrNamespaceNotFound
 	}
-	ok := n.shhash.Expire(key, ttl)
-	if !ok {
-		return ErrKeyNotFound
-	}
-	return nil
+	return statusToError(n.shhash.Expire(key, ttl))
 }
 
 // HTTL returns the time-to-live of the hash for the given key in seconds from the specified namespace.
@@ -207,8 +204,18 @@ func (nm *NamespaceManager) HFGet(ns, key, field string) (string, error) {
 // HFSet sets or updates a field in the hash for the given key in the specified namespace.
 // Creates a new hash if one does not exist.
 // If ns is empty, the default namespace is used.
+// Returns [ErrKeyTooLarge] / [ErrValueTooLarge] if key, field, or value exceeds configured limits.
 // Returns [ErrNamespaceNotFound] if the namespace does not exist.
 func (nm *NamespaceManager) HFSet(ns, key, field, value string) error {
+	if err := nm.validateKey(key); err != nil {
+		return err
+	}
+	if err := nm.validateKey(field); err != nil {
+		return err
+	}
+	if err := nm.validateValue(value); err != nil {
+		return err
+	}
 	if ns == "" {
 		nm.defaultNs.shhash.SetField(key, field, value)
 		return nil

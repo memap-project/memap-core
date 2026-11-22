@@ -1,6 +1,9 @@
 package shard
 
 import (
+	"context"
+	"hash/maphash"
+	"maps"
 	"sync"
 )
 
@@ -8,6 +11,12 @@ import (
 const (
 	offset32 uint32 = 2166136261
 	prime32  uint32 = 16777619
+)
+
+const (
+	shrinkMinPeak    = 256
+	cleanDeleteBatch = 256
+	evictSampleSize  = 16
 )
 
 // HashKey computes the 32-bit FNV-1a hash of a string key.
@@ -48,17 +57,73 @@ func ShardIndex(key string, shardCount uint8) uint32 {
 	return HashKey(key) & uint32(shardCount-1)
 }
 
-// Shard is a generic thread-safe map around default map.
-type Shard[V any] struct {
-	mu    sync.RWMutex
-	items map[string]V
+// SeededShardIndex computes a randomized shard index using hash/maphash,
+// preventing shard-pinning hash-flooding DoS attacks.
+// mask must be shardCount - 1 where shardCount is a power of two.
+func SeededShardIndex(seed maphash.Seed, key string, mask uint64) uint64 {
+	if mask == 0 {
+		return 0
+	}
+	return maphash.String(seed, key) & mask
 }
 
-// NewShard creates a new Shard.
-func NewShard[V any]() *Shard[V] {
+// Shard is a generic thread-safe map around Go's built-in map with optional bounded
+// capacity (sampled eviction) and automatic bucket shrinking.
+type Shard[V any] struct {
+	mu      sync.RWMutex
+	items   map[string]V
+	maxKeys int
+	peakLen int
+}
+
+// NewShard creates a new Shard with optional maximum key limit (0 = unlimited).
+func NewShard[V any](maxKeys ...int) *Shard[V] {
+	var limit int
+	if len(maxKeys) > 0 && maxKeys[0] > 0 {
+		limit = maxKeys[0]
+	}
 	return &Shard[V]{
-		mu:    sync.RWMutex{},
-		items: make(map[string]V, 8),
+		mu:      sync.RWMutex{},
+		items:   make(map[string]V, 8),
+		maxKeys: limit,
+	}
+}
+
+// evictOneLocked removes a single entry when the shard is at capacity.
+// Caller must hold s.mu.Lock(). Prefers expired entries if isExpired is provided.
+func (s *Shard[V]) evictOneLocked(isExpired func(V) bool) {
+	if s.maxKeys <= 0 || len(s.items) < s.maxKeys {
+		return
+	}
+	var victim string
+	var hasVictim bool
+	checked := 0
+	for k, v := range s.items {
+		if !hasVictim {
+			victim = k
+			hasVictim = true
+		}
+		if isExpired != nil && isExpired(v) {
+			delete(s.items, k)
+			return
+		}
+		checked++
+		if checked >= evictSampleSize {
+			break
+		}
+	}
+	if hasVictim {
+		delete(s.items, victim)
+	}
+}
+
+func (s *Shard[V]) maybeShrinkLocked() {
+	if s.peakLen >= shrinkMinPeak && len(s.items)*4 <= s.peakLen {
+		newCap := max(len(s.items), 8)
+		shrunk := make(map[string]V, newCap)
+		maps.Copy(shrunk, s.items)
+		s.items = shrunk
+		s.peakLen = len(s.items)
 	}
 }
 
@@ -89,16 +154,58 @@ func (s *Shard[V]) GetOrInit(key string, initFn func() V) (V, bool) {
 	if val, ok = s.items[key]; ok {
 		return val, true
 	}
+	s.evictOneLocked(nil)
 	val = initFn()
 	s.items[key] = val
+	if len(s.items) > s.peakLen {
+		s.peakLen = len(s.items)
+	}
+	return val, false
+}
+
+// GetOrReplace atomically returns the existing unexpired item, or initializes and stores
+// a new item if the key is absent or expired.
+// Returns (val, true) if a valid unexpired item already existed, or (val, false) if newly created/replaced.
+func (s *Shard[V]) GetOrReplace(key string, isExpired func(V) bool, initFn func() V) (V, bool) {
+	s.mu.RLock()
+	val, ok := s.items[key]
+	s.mu.RUnlock()
+	if ok && !isExpired(val) {
+		return val, true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if val, ok = s.items[key]; ok && !isExpired(val) {
+		return val, true
+	}
+	if !ok {
+		s.evictOneLocked(isExpired)
+	}
+	val = initFn()
+	s.items[key] = val
+	if len(s.items) > s.peakLen {
+		s.peakLen = len(s.items)
+	}
 	return val, false
 }
 
 // Set sets or updates the item for the given key in the Shard.
 func (s *Shard[V]) Set(key string, value V) {
+	s.SetWithEvictCheck(key, value, nil)
+}
+
+// SetWithEvictCheck sets or updates the item for the given key, preferring expired
+// entries when sampled eviction is triggered by MaxKeysPerShard.
+func (s *Shard[V]) SetWithEvictCheck(key string, value V, isExpired func(V) bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, exists := s.items[key]; !exists {
+		s.evictOneLocked(isExpired)
+	}
 	s.items[key] = value
+	if len(s.items) > s.peakLen {
+		s.peakLen = len(s.items)
+	}
 }
 
 // Delete removes the item for the given key from the Shard.
@@ -106,6 +213,21 @@ func (s *Shard[V]) Delete(key string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.items, key)
+	s.maybeShrinkLocked()
+}
+
+// DeleteIf atomically deletes key only if it exists and match(currentVal) returns true.
+// This prevents TOCTOU races where lazy expiration deletes a freshly overwritten key.
+func (s *Shard[V]) DeleteIf(key string, match func(V) bool) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	val, ok := s.items[key]
+	if !ok || !match(val) {
+		return false
+	}
+	delete(s.items, key)
+	s.maybeShrinkLocked()
+	return true
 }
 
 // Update updates an item in the Shard under write lock if it exists.
@@ -125,14 +247,90 @@ func (s *Shard[V]) Update(key string, fn func(val V) bool) bool {
 	return false
 }
 
-// Clean removes items from the Shard for which the predicate returns true.
-func (s *Shard[V]) Clean(predicate func(key string, value V) bool) {
+// ExpireInPlace atomically checks existence and expiration under write lock,
+// deleting the entry if already expired, or invoking expireFn if still alive.
+func (s *Shard[V]) ExpireInPlace(key string, isExpired func(V) bool, expireFn func(V) bool) Status {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for k, v := range s.items {
-		if predicate(k, v) {
-			delete(s.items, k)
+	val, ok := s.items[key]
+	if !ok {
+		return StatusNotFound
+	}
+	if isExpired(val) {
+		delete(s.items, key)
+		s.maybeShrinkLocked()
+		return StatusExpired
+	}
+	if !expireFn(val) {
+		return StatusExpired
+	}
+	return StatusSuccess
+}
+
+// Clean removes items from the Shard for which the predicate returns true.
+func (s *Shard[V]) Clean(predicate func(key string, value V) bool) {
+	s.CleanCtx(context.Background(), predicate)
+}
+
+// CleanCtx removes items for which predicate returns true using a two-phase batched strategy:
+// Phase 1 scans under RLock (non-blocking for concurrent readers),
+// Phase 2 deletes in small write-locked batches while re-verifying predicate (TOCTOU-safe).
+// Respects context cancellation and shrinks the map if occupancy drops far below peak.
+func (s *Shard[V]) CleanCtx(ctx context.Context, predicate func(key string, value V) bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return
+	}
+
+	var toDelete []string
+	var needsShrink bool
+
+	s.mu.RLock()
+	if len(s.items) == 0 {
+		needsShrink = s.peakLen >= shrinkMinPeak
+		s.mu.RUnlock()
+		if needsShrink {
+			s.mu.Lock()
+			s.maybeShrinkLocked()
+			s.mu.Unlock()
 		}
+		return
+	}
+
+	scanned := 0
+	for k, v := range s.items {
+		scanned++
+		if scanned&1023 == 0 && ctx.Err() != nil {
+			s.mu.RUnlock()
+			return
+		}
+		if predicate(k, v) {
+			toDelete = append(toDelete, k)
+		}
+	}
+	s.mu.RUnlock()
+
+	if len(toDelete) == 0 {
+		return
+	}
+
+	for start := 0; start < len(toDelete); start += cleanDeleteBatch {
+		if ctx.Err() != nil {
+			return
+		}
+		end := min(start+cleanDeleteBatch, len(toDelete))
+		s.mu.Lock()
+		for _, k := range toDelete[start:end] {
+			if v, ok := s.items[k]; ok && predicate(k, v) {
+				delete(s.items, k)
+			}
+		}
+		if end == len(toDelete) {
+			s.maybeShrinkLocked()
+		}
+		s.mu.Unlock()
 	}
 }
 
@@ -141,4 +339,5 @@ func (s *Shard[V]) Flush() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.items = make(map[string]V, 8)
+	s.peakLen = 0
 }

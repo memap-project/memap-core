@@ -1,6 +1,9 @@
 package shard
 
 import (
+	"context"
+	"fmt"
+	"hash/maphash"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -392,5 +395,109 @@ func TestShard_Concurrency(t *testing.T) {
 		val, ok := s.Get("singleton")
 		assert.True(t, ok)
 		assert.Equal(t, 42, val)
+	})
+}
+
+func TestShard_DeleteIf_And_GetOrReplace(t *testing.T) {
+	t.Run("DeleteIf only deletes matching pointer", func(t *testing.T) {
+		type entry struct{ id int }
+		s := NewShard[*entry]()
+		e1 := &entry{id: 1}
+		e2 := &entry{id: 2}
+
+		s.Set("k", e1)
+		// Simulate concurrent overwrite before lazy delete runs
+		s.Set("k", e2)
+
+		assert.False(t, s.DeleteIf("k", func(cur *entry) bool { return cur == e1 }))
+		got, ok := s.Get("k")
+		require.True(t, ok)
+		assert.Same(t, e2, got)
+
+		assert.True(t, s.DeleteIf("k", func(cur *entry) bool { return cur == e2 }))
+		_, ok = s.Get("k")
+		assert.False(t, ok)
+	})
+
+	t.Run("GetOrReplace atomically replaces expired item once under concurrency", func(t *testing.T) {
+		type entry struct {
+			expired bool
+			id      int
+		}
+		s := NewShard[*entry]()
+		s.Set("k", &entry{expired: true, id: 0})
+
+		const workers = 32
+		var created atomic.Int64
+		start := make(chan struct{})
+		results := make([]*entry, workers)
+		var wg sync.WaitGroup
+		wg.Add(workers)
+
+		for i := range workers {
+			go func(idx int) {
+				defer wg.Done()
+				<-start
+				e, _ := s.GetOrReplace(
+					"k",
+					func(cur *entry) bool { return cur.expired },
+					func() *entry {
+						created.Add(1)
+						return &entry{expired: false, id: idx + 1}
+					},
+				)
+				results[idx] = e
+			}(i)
+		}
+		close(start)
+		wg.Wait()
+
+		assert.Equal(t, int64(1), created.Load())
+		for i := 1; i < workers; i++ {
+			assert.Same(t, results[0], results[i])
+		}
+	})
+}
+
+func TestShard_Eviction_Shrink_CleanCtx_And_SeededIndex(t *testing.T) {
+	t.Run("maxKeys bounds shard size and prefers evicting expired entries", func(t *testing.T) {
+		type entry struct{ exp bool }
+		s := NewShard[*entry](4)
+		s.Set("exp1", &entry{exp: true})
+		s.Set("live1", &entry{exp: false})
+		s.Set("live2", &entry{exp: false})
+		s.Set("live3", &entry{exp: false})
+
+		s.SetWithEvictCheck("live4", &entry{exp: false}, func(e *entry) bool { return e.exp })
+		assert.LessOrEqual(t, len(s.items), 4)
+		_, hasExp := s.Get("exp1")
+		assert.False(t, hasExp, "expired entry should be evicted first")
+	})
+
+	t.Run("CleanCtx respects canceled context and shrinks map after mass expiry", func(t *testing.T) {
+		s := NewShard[int]()
+		for i := range 400 {
+			s.Set(fmt.Sprintf("k:%d", i), i)
+		}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		s.CleanCtx(ctx, func(_ string, _ int) bool { return true })
+		assert.Equal(t, 400, len(s.items), "canceled context must abort before deleting")
+
+		s.CleanCtx(context.Background(), func(_ string, v int) bool { return v >= 50 })
+		assert.Equal(t, 50, len(s.items))
+		assert.Equal(t, 50, s.peakLen, "peakLen should reset after shrink")
+	})
+
+	t.Run("SeededShardIndex stays within mask bounds", func(t *testing.T) {
+		seed := maphash.MakeSeed()
+		for _, sc := range []uint8{1, 2, 4, 8, 16, 64, 128} {
+			mask := uint64(sc - 1)
+			for i := range 50 {
+				idx := SeededShardIndex(seed, fmt.Sprintf("key-%d", i), mask)
+				assert.Less(t, idx, uint64(sc))
+			}
+		}
 	})
 }

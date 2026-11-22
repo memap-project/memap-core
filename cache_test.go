@@ -153,3 +153,87 @@ func TestCache_ConcurrentEraseAndCleaner_NoRace(t *testing.T) {
 
 	wg.Wait()
 }
+
+func TestCache_HighSecurityFixes(t *testing.T) {
+	t.Run("counter rejects negative alpha, negative limit, and int64 overflow", func(t *testing.T) {
+		c := memap.New()
+		defer c.Close()
+
+		require.ErrorIs(t, c.CSLimit("cnt", -1), ns.ErrInvalidArg)
+		_, err := c.CGet("cnt")
+		require.ErrorIs(t, err, ns.ErrKeyNotFound)
+
+		require.NoError(t, c.CSLimit("cnt", 100))
+		v, err := c.CIncrBy("cnt", 50)
+		require.NoError(t, err)
+		assert.Equal(t, int64(50), v)
+
+		_, err = c.CIncrBy("cnt", math.MaxInt64)
+		require.ErrorIs(t, err, ns.ErrLimitExceeded)
+		_, err = c.CIncrBy("cnt", -5)
+		require.ErrorIs(t, err, ns.ErrInvalidArg)
+		_, err = c.CDecrBy("cnt", -1000)
+		require.ErrorIs(t, err, ns.ErrInvalidArg)
+
+		v, err = c.CGet("cnt")
+		require.NoError(t, err)
+		assert.Equal(t, int64(50), v)
+	})
+
+	t.Run("Expire returns ErrInvalidTTL for non-positive or overflowing TTL on existing keys", func(t *testing.T) {
+		c := memap.New()
+		defer c.Close()
+
+		require.NoError(t, c.Set("k", "v", 0))
+		require.ErrorIs(t, c.Expire("k", -1), ns.ErrInvalidTTL)
+		require.ErrorIs(t, c.Expire("k", 0), ns.ErrInvalidTTL)
+		require.ErrorIs(t, c.Expire("k", math.MaxInt64), ns.ErrInvalidTTL)
+
+		require.NoError(t, c.HFSet("h", "f", "v"))
+		require.ErrorIs(t, c.HExpire("h", -1), ns.ErrInvalidTTL)
+
+		_, err := c.CIncrBy("cnt", 1)
+		require.NoError(t, err)
+		require.ErrorIs(t, c.CExpire("cnt", 0), ns.ErrInvalidTTL)
+
+		require.NoError(t, c.BInit("rb", 4, 0))
+		require.ErrorIs(t, c.BExpire("rb", -5), ns.ErrInvalidTTL)
+
+		require.NoError(t, c.SAdd("s", "m", 0))
+		require.ErrorIs(t, c.SExpire("s", math.MaxInt64), ns.ErrInvalidTTL)
+	})
+
+	t.Run("enforces MaxKeyBytes, MaxValueBytes, MaxNamespaces, and MaxKeysPerShard", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		cfg.Namespace.MaxKeyBytes = 8
+		cfg.Namespace.MaxValueBytes = 16
+		cfg.Namespace.MaxNamespaces = 2
+		cfg.Namespace.MaxKeysPerShard = 2
+		cfg.Namespace.ShardCounts.Shmap = 1
+
+		c, err := memap.NewWithConfig(cfg)
+		require.NoError(t, err)
+		defer c.Close()
+
+		require.ErrorIs(t, c.Set("123456789", "ok", 0), ns.ErrKeyTooLarge)
+		require.ErrorIs(t, c.Set("ok", "12345678901234567", 0), ns.ErrValueTooLarge)
+
+		require.NoError(t, c.CreateNamespace("ns1"))
+		require.NoError(t, c.CreateNamespace("ns2"))
+		require.ErrorIs(t, c.CreateNamespace("ns3"), ns.ErrNamespaceLimitExceeded)
+		require.NoError(t, c.DropNamespace("ns1"))
+		require.NoError(t, c.CreateNamespace("ns3"))
+
+		// MaxKeysPerShard=2 on 1 shard evicts when adding 3rd key
+		require.NoError(t, c.Set("k1", "v1", 0))
+		require.NoError(t, c.Set("k2", "v2", 0))
+		require.NoError(t, c.Set("k3", "v3", 0))
+		present := 0
+		for _, k := range []string{"k1", "k2", "k3"} {
+			if _, err := c.Get(k); err == nil {
+				present++
+			}
+		}
+		assert.Equal(t, 2, present)
+	})
+}

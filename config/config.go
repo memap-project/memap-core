@@ -2,8 +2,13 @@ package config
 
 import "math"
 
-// DefaultMaxRingBufferCapacity is the default upper bound for a single ring buffer's capacity.
-const DefaultMaxRingBufferCapacity int64 = 1 << 20
+// Default limits for storage safety and bounded resource consumption.
+const (
+	DefaultMaxRingBufferCapacity int64 = 1 << 20  // 1,048,576 elements per ring buffer
+	DefaultMaxKeyBytes           int   = 64 << 10 // 64 KiB per key/field/namespace name
+	DefaultMaxValueBytes         int   = 1 << 20  // 1 MiB per value/member
+	DefaultMaxNamespaces         int   = 1024     // maximum custom namespaces
+)
 
 // Config represents configuration for the memap core.
 type Config struct {
@@ -15,6 +20,10 @@ type Config struct {
 type NamespaceConfig struct {
 	ShardCounts           ShardCounts `yaml:"shardCounts" json:"shardCounts"`
 	MaxRingBufferCapacity int64       `yaml:"maxRingBufferCapacity" json:"maxRingBufferCapacity"`
+	MaxKeysPerShard       int         `yaml:"maxKeysPerShard" json:"maxKeysPerShard"`
+	MaxKeyBytes           int         `yaml:"maxKeyBytes" json:"maxKeyBytes"`
+	MaxValueBytes         int         `yaml:"maxValueBytes" json:"maxValueBytes"`
+	MaxNamespaces         int         `yaml:"maxNamespaces" json:"maxNamespaces"`
 }
 
 // ShardCounts specifies the number of shards for each storage component.
@@ -39,6 +48,10 @@ func DefaultConfig() Config {
 				Shset:     8,
 			},
 			MaxRingBufferCapacity: DefaultMaxRingBufferCapacity,
+			MaxKeysPerShard:       0, // 0 = unlimited unless explicitly bounded
+			MaxKeyBytes:           DefaultMaxKeyBytes,
+			MaxValueBytes:         DefaultMaxValueBytes,
+			MaxNamespaces:         DefaultMaxNamespaces,
 		},
 	}
 }
@@ -57,6 +70,18 @@ func (c Config) Normalize() Config {
 	c.Namespace.ShardCounts.Shset = normalizeShardCount(c.Namespace.ShardCounts.Shset, def.Namespace.ShardCounts.Shset)
 	if c.Namespace.MaxRingBufferCapacity <= 0 || c.Namespace.MaxRingBufferCapacity > maxAllowedRingBufferCap {
 		c.Namespace.MaxRingBufferCapacity = def.Namespace.MaxRingBufferCapacity
+	}
+	if c.Namespace.MaxKeysPerShard < 0 {
+		c.Namespace.MaxKeysPerShard = 0
+	}
+	if c.Namespace.MaxKeyBytes <= 0 {
+		c.Namespace.MaxKeyBytes = def.Namespace.MaxKeyBytes
+	}
+	if c.Namespace.MaxValueBytes <= 0 {
+		c.Namespace.MaxValueBytes = def.Namespace.MaxValueBytes
+	}
+	if c.Namespace.MaxNamespaces <= 0 {
+		c.Namespace.MaxNamespaces = def.Namespace.MaxNamespaces
 	}
 	return c
 }

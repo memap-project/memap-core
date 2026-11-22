@@ -84,6 +84,20 @@ func TestConfig_Validate(t *testing.T) {
 		cfg.Namespace.MaxRingBufferCapacity = 1024
 		assert.NoError(t, cfg.Validate())
 	})
+
+	t.Run("resource limits reject negative values", func(t *testing.T) {
+		cases := []func(*Config){
+			func(c *Config) { c.Namespace.MaxKeysPerShard = -1 },
+			func(c *Config) { c.Namespace.MaxKeyBytes = -1 },
+			func(c *Config) { c.Namespace.MaxValueBytes = -1 },
+			func(c *Config) { c.Namespace.MaxNamespaces = -1 },
+		}
+		for _, mutate := range cases {
+			cfg := DefaultConfig()
+			mutate(&cfg)
+			assert.ErrorIs(t, cfg.Validate(), ErrInvalidResourceLimit)
+		}
+	})
 }
 
 func TestConfig_Normalize(t *testing.T) {

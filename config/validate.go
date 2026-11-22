@@ -14,6 +14,7 @@ var (
 	ErrInvalidShardCount            = errors.New("shard count must be a power of two")
 	ErrInvalidCleanerInterval       = errors.New("cleanerInterval must be greater than 0 and not overflow time.Duration")
 	ErrInvalidMaxRingBufferCapacity = errors.New("maxRingBufferCapacity must be non-negative and within allocatable bounds")
+	ErrInvalidResourceLimit         = errors.New("resource limits must be non-negative")
 )
 
 // isPowerOfTwo reports whether n is a power of two.
@@ -65,6 +66,20 @@ func (c *Config) ValidateMaxRingBufferCapacity() error {
 	return nil
 }
 
+// ValidateResourceLimits returns an error if any resource limit is negative.
+func (c *Config) ValidateResourceLimits() error {
+	if c == nil {
+		return ErrNilConfig
+	}
+	if c.Namespace.MaxKeysPerShard < 0 ||
+		c.Namespace.MaxKeyBytes < 0 ||
+		c.Namespace.MaxValueBytes < 0 ||
+		c.Namespace.MaxNamespaces < 0 {
+		return ErrInvalidResourceLimit
+	}
+	return nil
+}
+
 // Validate validates the core configuration.
 func (c *Config) Validate() error {
 	if c == nil {
@@ -77,6 +92,9 @@ func (c *Config) Validate() error {
 		return err
 	}
 	if err := c.ValidateMaxRingBufferCapacity(); err != nil {
+		return err
+	}
+	if err := c.ValidateResourceLimits(); err != nil {
 		return err
 	}
 	return nil

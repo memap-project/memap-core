@@ -58,7 +58,7 @@ func NewWithConfig(cfg config.Config) (*Cache, error) {
 
 func newCache(c config.Config) *Cache {
 	manager := ns.NewNamespaceManager(&c.Namespace)
-	cleaner := clean.NewCleaner(context.Background(), c.CleanerInterval, manager.CleanExpired)
+	cleaner := clean.NewCleanerWithContext(context.Background(), c.CleanerInterval, manager.CleanExpiredCtx)
 	cleaner.Start()
 	return &Cache{
 		manager: manager,
