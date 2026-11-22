@@ -1,6 +1,7 @@
 package shcounter
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -129,7 +130,7 @@ func TestShardedCounter_DecrBy(t *testing.T) {
 		shc.IncrBy("exp_cnt", 10)
 		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		val, status := shc.DecrBy("exp_cnt", 5)
 		assert.Equal(t, shard.StatusExpired, status)
@@ -165,26 +166,27 @@ func TestShardedCounter_Get_and_SetLimit_and_GetLimit(t *testing.T) {
 		assert.Equal(t, int64(0), val)
 	})
 
-	t.Run("get and get limit on expired counter returns false and cleans key", func(t *testing.T) {
+	t.Run("get, get limit, and ttl on expired counter return false/-2 and clean key", func(t *testing.T) {
 		shc := NewShardedCounter(4)
 		shc.SetLimit("exp_cnt", 50)
 		shc.IncrBy("exp_cnt", 25)
+		shc.SetLimit("exp_cnt2", 50)
+		shc.IncrBy("exp_ttl", 5)
 		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt2", 1))
+		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_ttl", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		val, ok := shc.Get("exp_cnt")
 		assert.False(t, ok)
 		assert.Equal(t, int64(0), val)
 
-		// Set again, expire again, and test GetLimit
-		shc.SetLimit("exp_cnt2", 50)
-		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt2", 1))
-		time.Sleep(2100 * time.Millisecond)
-
 		lim, ok := shc.GetLimit("exp_cnt2")
 		assert.False(t, ok)
 		assert.Equal(t, int64(0), lim)
+
+		assert.Equal(t, int64(-2), shc.TTL("exp_ttl"))
 	})
 
 	t.Run("set limit on expired counter re-initializes counter", func(t *testing.T) {
@@ -192,7 +194,7 @@ func TestShardedCounter_Get_and_SetLimit_and_GetLimit(t *testing.T) {
 		shc.IncrBy("exp_cnt3", 25)
 		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt3", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		shc.SetLimit("exp_cnt3", 200)
 
@@ -228,7 +230,7 @@ func TestShardedCounter_Reset(t *testing.T) {
 		shc.IncrBy("exp_cnt", 10)
 		require.Equal(t, shard.StatusSuccess, shc.Expire("exp_cnt", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		assert.False(t, shc.Reset("exp_cnt"))
 	})
@@ -299,7 +301,11 @@ func TestShardedCounter_CleanExpired(t *testing.T) {
 	require.Equal(t, shard.StatusSuccess, shc.Expire("exp1", 1))
 	require.Equal(t, shard.StatusSuccess, shc.Expire("exp2", 1))
 
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(1050 * time.Millisecond)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	shc.CleanExpiredCtx(canceled)
 
 	shc.CleanExpired()
 

@@ -84,6 +84,17 @@ func Test_SRemove(t *testing.T) {
 		err := nm.SRemove("missing_ns", "set1", "m1")
 		require.ErrorIs(t, err, ErrNamespaceNotFound)
 	})
+
+	t.Run("SDel deletes set in default and custom namespace", func(t *testing.T) {
+		nm := newTestManager()
+		require.ErrorIs(t, nm.SDel("missing_ns", "set1"), ErrNamespaceNotFound)
+
+		require.NoError(t, nm.Create("ns1"))
+		require.NoError(t, nm.SAdd("ns1", "set1", "m1", 0))
+		require.NoError(t, nm.SDel("ns1", "set1"))
+		_, err := nm.SCard("ns1", "set1")
+		require.ErrorIs(t, err, ErrKeyNotFound)
+	})
 }
 
 func Test_SCard_and_SMembers(t *testing.T) {
@@ -165,7 +176,7 @@ func Test_SExpire_and_STTL(t *testing.T) {
 		require.NoError(t, nm.SAdd("", "ttl_set", "val", 0))
 		require.NoError(t, nm.SExpire("", "ttl_set", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		_, err := nm.SCard("", "ttl_set")
 		require.ErrorIs(t, err, ErrKeyNotFound)

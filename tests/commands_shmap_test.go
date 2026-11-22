@@ -146,7 +146,7 @@ func Test_Expire_and_TTL(t *testing.T) {
 		nm := newTestManager()
 		require.NoError(t, nm.Set("", "exp_key", "val", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		_, err := nm.Get("", "exp_key")
 		require.ErrorIs(t, err, ErrKeyNotFound)

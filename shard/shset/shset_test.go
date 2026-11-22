@@ -1,6 +1,7 @@
 package shset
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -47,7 +48,7 @@ func TestShardedSet_Add_and_IsMember(t *testing.T) {
 		shs := NewShardedSet(4)
 		shs.Add("exp_set", "old_mem", 1)
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		shs.Add("exp_set", "new_mem", 0)
 
@@ -59,7 +60,7 @@ func TestShardedSet_Add_and_IsMember(t *testing.T) {
 		shs := NewShardedSet(4)
 		shs.Add("exp_set2", "mem", 1)
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		assert.False(t, shs.IsMember("exp_set2", "mem"))
 		assert.Equal(t, int64(-2), shs.TTL("exp_set2"))
@@ -120,22 +121,34 @@ func TestShardedSet_Card_and_Members(t *testing.T) {
 		assert.Empty(t, mems)
 	})
 
-	t.Run("card and members on expired set return false and delete key", func(t *testing.T) {
+	t.Run("card, members, remove, and ttl on expired set return false/-2 and delete key", func(t *testing.T) {
 		shs := NewShardedSet(4)
 		shs.Add("exp_set", "a", 1)
+		shs.Add("exp_set2", "a", 1)
+		shs.Add("exp_rem", "a", 1)
+		shs.Add("exp_ttl", "a", 1)
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		c, ok := shs.Card("exp_set")
 		assert.False(t, ok)
 		assert.Equal(t, int64(0), c)
 
-		shs.Add("exp_set2", "a", 1)
-		time.Sleep(2100 * time.Millisecond)
-
 		mems, ok := shs.Members("exp_set2")
 		assert.False(t, ok)
 		assert.Empty(t, mems)
+
+		shs.Remove("exp_rem", "a")
+		assert.False(t, shs.IsMember("exp_rem", "a"))
+		assert.Equal(t, int64(-2), shs.TTL("exp_ttl"))
+	})
+
+	t.Run("delete removes entire set", func(t *testing.T) {
+		shs := NewShardedSet(4)
+		shs.Add("del_set", "a", 0)
+		shs.Delete("del_set")
+		_, ok := shs.Card("del_set")
+		assert.False(t, ok)
 	})
 }
 
@@ -181,7 +194,11 @@ func TestShardedSet_CleanExpired(t *testing.T) {
 	shs.Add("exp1", "m", 1)
 	shs.Add("exp2", "m", 1)
 
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(1050 * time.Millisecond)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	shs.CleanExpiredCtx(canceled)
 
 	shs.CleanExpired()
 

@@ -216,6 +216,22 @@ func Test_CDel(t *testing.T) {
 		_, err = nm.CGet("ns1", "cnt")
 		require.ErrorIs(t, err, ErrKeyNotFound)
 	})
+
+	t.Run("CReset in default, custom, and missing namespaces", func(t *testing.T) {
+		nm := newTestManager()
+		require.ErrorIs(t, nm.CReset("missing_ns", "cnt"), ErrNamespaceNotFound)
+		require.ErrorIs(t, nm.CReset("", "missing"), ErrKeyNotFound)
+
+		require.NoError(t, nm.Create("ns1"))
+		require.ErrorIs(t, nm.CReset("ns1", "missing"), ErrKeyNotFound)
+
+		_, err := nm.CIncrBy("ns1", "cnt", 12)
+		require.NoError(t, err)
+		require.NoError(t, nm.CReset("ns1", "cnt"))
+		v, err := nm.CGet("ns1", "cnt")
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), v)
+	})
 }
 
 func Test_CExpire_and_CTTL(t *testing.T) {
@@ -279,7 +295,7 @@ func Test_CExpire_and_CTTL(t *testing.T) {
 		require.NoError(t, err)
 		require.NoError(t, nm.CExpire("", "exp_cnt", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 		_, err = nm.CGet("", "exp_cnt")
 		require.ErrorIs(t, err, ErrKeyNotFound)
 

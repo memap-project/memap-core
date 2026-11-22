@@ -1,6 +1,7 @@
 package shhash
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -67,7 +68,7 @@ func TestShardedHash_SetField_and_GetField(t *testing.T) {
 		shh.SetField("exp_hash", "f1", "v1")
 		require.Equal(t, shard.StatusSuccess, shh.Expire("exp_hash", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		val, status := shh.GetField("exp_hash", "f1")
 		assert.Equal(t, shard.StatusExpired, status)
@@ -81,7 +82,7 @@ func TestShardedHash_SetField_and_GetField(t *testing.T) {
 		shh.SetField("exp_hash2", "old", "val")
 		require.Equal(t, shard.StatusSuccess, shh.Expire("exp_hash2", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		shh.SetField("exp_hash2", "new", "val2")
 
@@ -117,7 +118,7 @@ func TestShardedHash_Get(t *testing.T) {
 		shh.SetField("exp_h", "a", "1")
 		require.Equal(t, shard.StatusSuccess, shh.Expire("exp_h", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		m, ok := shh.Get("exp_h")
 		assert.False(t, ok)
@@ -144,7 +145,7 @@ func TestShardedHash_Set(t *testing.T) {
 		shh.SetField("exp_h", "k", "v")
 		require.Equal(t, shard.StatusSuccess, shh.Expire("exp_h", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		shh.Set("exp_h", 50)
 		assert.True(t, shh.Exists("exp_h"))
@@ -210,7 +211,7 @@ func TestShardedHash_Exists(t *testing.T) {
 		shh.SetField("exp_h", "f1", "v1")
 		require.Equal(t, shard.StatusSuccess, shh.Expire("exp_h", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		assert.False(t, shh.Exists("exp_h"))
 	})
@@ -252,31 +253,29 @@ func TestShardedHash_Len_Keys_Values(t *testing.T) {
 
 	t.Run("expired hash returns 0/empty and false and deletes key", func(t *testing.T) {
 		shh := NewShardedHash(4)
-		shh.SetField("exp_h", "k1", "v1")
-		require.Equal(t, shard.StatusSuccess, shh.Expire("exp_h", 1))
+		for _, k := range []string{"exp_h", "exp_h2", "exp_h3", "exp_del", "exp_ttl"} {
+			shh.SetField(k, "k1", "v1")
+			require.Equal(t, shard.StatusSuccess, shh.Expire(k, 1))
+		}
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		l, ok := shh.Len("exp_h")
 		assert.False(t, ok)
 		assert.Equal(t, int64(0), l)
 
-		// Create another expired hash for Keys/Values checks
-		shh.SetField("exp_h2", "k1", "v1")
-		require.Equal(t, shard.StatusSuccess, shh.Expire("exp_h2", 1))
-		time.Sleep(2100 * time.Millisecond)
-
 		keys, ok := shh.Keys("exp_h2")
 		assert.False(t, ok)
 		assert.Empty(t, keys)
 
-		shh.SetField("exp_h3", "k1", "v1")
-		require.Equal(t, shard.StatusSuccess, shh.Expire("exp_h3", 1))
-		time.Sleep(2100 * time.Millisecond)
-
 		values, ok := shh.Values("exp_h3")
 		assert.False(t, ok)
 		assert.Empty(t, values)
+
+		// DeleteField and TTL on expired hashes trigger lazy deletion
+		shh.DeleteField("exp_del", "k1")
+		assert.False(t, shh.Exists("exp_del"))
+		assert.Equal(t, int64(-2), shh.TTL("exp_ttl"))
 	})
 }
 
@@ -326,7 +325,11 @@ func TestShardedHash_CleanExpired(t *testing.T) {
 	require.Equal(t, shard.StatusSuccess, shh.Expire("exp1", 1))
 	require.Equal(t, shard.StatusSuccess, shh.Expire("exp2", 1))
 
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(1050 * time.Millisecond)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	shh.CleanExpiredCtx(canceled)
 
 	shh.CleanExpired()
 

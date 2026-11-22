@@ -329,36 +329,174 @@ func TestCache_MediumFixes(t *testing.T) {
 			nilCache.Close()
 		})
 	})
+
+	t.Run("NewWithConfig applies default MaxRingBufferCapacity when 0", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		cfg.Namespace.MaxRingBufferCapacity = 0
+		c, err := memap.NewWithConfig(cfg)
+		require.NoError(t, err)
+		defer c.Close()
+		assert.Equal(t, config.DefaultMaxRingBufferCapacity, c.Config().Namespace.MaxRingBufferCapacity)
+	})
 }
 
-func BenchmarkKV_SetOverwrite(b *testing.B) {
+func TestCache_FullPublicAPIFacade(t *testing.T) {
 	c := memap.New()
 	defer c.Close()
-	_ = c.Set("bench-key", "val", 60)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		_ = c.Set("bench-key", "val2", 60)
-	}
-}
 
-func BenchmarkKV_GetHit(b *testing.B) {
-	c := memap.New()
-	defer c.Close()
-	_ = c.Set("bench-key", "val", 60)
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		_, _ = c.Get("bench-key")
-	}
-}
+	require.NoError(t, c.CreateNamespace("tenant"))
 
-func BenchmarkHash_GetMiss(b *testing.B) {
-	c := memap.New()
-	defer c.Close()
-	b.ReportAllocs()
-	b.ResetTimer()
-	for b.Loop() {
-		_, _ = c.HGet("missing-hash")
+	exerciseStores := func(
+		t *testing.T,
+		kv memap.KVStore,
+		h memap.HashStore,
+		cnt memap.CounterStore,
+		rb memap.RingBufferStore,
+		s memap.SetStore,
+	) {
+		t.Helper()
+
+		// KVStore
+		require.NoError(t, kv.Set("k1", "v1", 0))
+		v, err := kv.Get("k1")
+		require.NoError(t, err)
+		assert.Equal(t, "v1", v)
+		require.NoError(t, kv.Expire("k1", 30))
+		ttl, err := kv.TTL("k1")
+		require.NoError(t, err)
+		assert.Greater(t, ttl, int64(0))
+		require.NoError(t, kv.Del("k1"))
+		_, err = kv.Get("k1")
+		require.ErrorIs(t, err, memap.ErrKeyNotFound)
+
+		// HashStore
+		require.NoError(t, h.HSet("h1", 0))
+		require.NoError(t, h.HFSet("h1", "f1", "v1"))
+		require.NoError(t, h.HFSet("h1", "f2", "v2"))
+		fv, err := h.HFGet("h1", "f1")
+		require.NoError(t, err)
+		assert.Equal(t, "v1", fv)
+		m, err := h.HGet("h1")
+		require.NoError(t, err)
+		assert.Equal(t, map[string]string{"f1": "v1", "f2": "v2"}, m)
+		exists, err := h.HExists("h1")
+		require.NoError(t, err)
+		assert.True(t, exists)
+		hlen, err := h.HLen("h1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), hlen)
+		hkeys, err := h.HKeys("h1")
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"f1", "f2"}, hkeys)
+		hvals, err := h.HValues("h1")
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"v1", "v2"}, hvals)
+		require.NoError(t, h.HExpire("h1", 30))
+		ttl, err = h.HTTL("h1")
+		require.NoError(t, err)
+		assert.Greater(t, ttl, int64(0))
+		require.NoError(t, h.HFDel("h1", "f1"))
+		_, err = h.HFGet("h1", "f1")
+		require.ErrorIs(t, err, memap.ErrFieldNotFound)
+		require.NoError(t, h.HDel("h1"))
+		exists, err = h.HExists("h1")
+		require.NoError(t, err)
+		assert.False(t, exists)
+
+		// CounterStore
+		require.NoError(t, cnt.CSLimit("c1", 10))
+		lim, err := cnt.CGLimit("c1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(10), lim)
+		cv, err := cnt.CIncrBy("c1", 6)
+		require.NoError(t, err)
+		assert.Equal(t, int64(6), cv)
+		cv, err = cnt.CDecrBy("c1", 2)
+		require.NoError(t, err)
+		assert.Equal(t, int64(4), cv)
+		cv, err = cnt.CGet("c1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(4), cv)
+		require.NoError(t, cnt.CExpire("c1", 30))
+		ttl, err = cnt.CTTL("c1")
+		require.NoError(t, err)
+		assert.Greater(t, ttl, int64(0))
+		require.NoError(t, cnt.CReset("c1"))
+		cv, err = cnt.CGet("c1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), cv)
+		require.NoError(t, cnt.CDel("c1"))
+		_, err = cnt.CGet("c1")
+		require.ErrorIs(t, err, memap.ErrKeyNotFound)
+
+		// RingBufferStore
+		require.NoError(t, rb.BInit("b1", 3, 0))
+		require.NoError(t, rb.BPush("b1", "a"))
+		require.NoError(t, rb.BPush("b1", "b"))
+		bcap, err := rb.BCap("b1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(3), bcap)
+		blen, err := rb.BLen("b1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), blen)
+		bv, err := rb.BAt("b1", 1)
+		require.NoError(t, err)
+		assert.Equal(t, "b", bv)
+		bv, err = rb.BPeek("b1")
+		require.NoError(t, err)
+		assert.Equal(t, "a", bv)
+		bv, err = rb.BBack("b1")
+		require.NoError(t, err)
+		assert.Equal(t, "b", bv)
+		bslice, err := rb.BSlice("b1")
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, bslice)
+		bv, err = rb.BPop("b1")
+		require.NoError(t, err)
+		assert.Equal(t, "a", bv)
+		require.NoError(t, rb.BExpire("b1", 30))
+		ttl, err = rb.BTTL("b1")
+		require.NoError(t, err)
+		assert.Greater(t, ttl, int64(0))
+		require.NoError(t, rb.BReset("b1"))
+		blen, err = rb.BLen("b1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(0), blen)
+		require.NoError(t, rb.BDel("b1"))
+		_, err = rb.BLen("b1")
+		require.ErrorIs(t, err, memap.ErrKeyNotFound)
+
+		// SetStore
+		require.NoError(t, s.SAdd("s1", "m1", 0))
+		require.NoError(t, s.SAdd("s1", "m2", 0))
+		isMem, err := s.SIsMember("s1", "m1")
+		require.NoError(t, err)
+		assert.True(t, isMem)
+		card, err := s.SCard("s1")
+		require.NoError(t, err)
+		assert.Equal(t, int64(2), card)
+		mems, err := s.SMembers("s1")
+		require.NoError(t, err)
+		assert.ElementsMatch(t, []string{"m1", "m2"}, mems)
+		require.NoError(t, s.SExpire("s1", 30))
+		ttl, err = s.STTL("s1")
+		require.NoError(t, err)
+		assert.Greater(t, ttl, int64(0))
+		require.NoError(t, s.SRemove("s1", "m1"))
+		isMem, err = s.SIsMember("s1", "m1")
+		require.NoError(t, err)
+		assert.False(t, isMem)
+		require.NoError(t, s.SDel("s1"))
+		_, err = s.SCard("s1")
+		require.ErrorIs(t, err, memap.ErrKeyNotFound)
 	}
+
+	t.Run("default namespace via Cache", func(t *testing.T) {
+		exerciseStores(t, c, c, c, c, c)
+	})
+
+	t.Run("custom namespace via Namespace", func(t *testing.T) {
+		scoped := c.WithNamespace("tenant")
+		exerciseStores(t, scoped, scoped, scoped, scoped, scoped)
+	})
 }

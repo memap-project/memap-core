@@ -266,7 +266,7 @@ func Test_HExpire_and_HTTL(t *testing.T) {
 		require.NoError(t, nm.HFSet("", "exp_h", "f", "v"))
 		require.NoError(t, nm.HExpire("", "exp_h", 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		_, err := nm.HGet("", "exp_h")
 		require.ErrorIs(t, err, ErrKeyNotFound)

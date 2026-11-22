@@ -1,6 +1,7 @@
 package shrbuffer
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -109,14 +110,12 @@ func TestShardedRingBuffer_Push_and_Pop(t *testing.T) {
 	t.Run("push and pop on expired buffer return false/StatusExpired and delete key", func(t *testing.T) {
 		shrb := NewShardedRingBuffer(4)
 		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb", 3, 1))
+		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb2", 3, 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		assert.False(t, shrb.Push("exp_rb", "val"))
 		assert.Equal(t, int64(-2), shrb.TTL("exp_rb"))
-
-		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb2", 3, 1))
-		time.Sleep(2100 * time.Millisecond)
 
 		val, status := shrb.Pop("exp_rb2")
 		assert.Equal(t, shard.StatusExpired, status)
@@ -164,15 +163,13 @@ func TestShardedRingBuffer_At_and_Slice(t *testing.T) {
 		shrb := NewShardedRingBuffer(4)
 		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb", 3, 1))
 		shrb.Push("exp_rb", "a")
+		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb2", 3, 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		val, status := shrb.At("exp_rb", 0)
 		assert.Equal(t, shard.StatusExpired, status)
 		assert.Empty(t, val)
-
-		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb2", 3, 1))
-		time.Sleep(2100 * time.Millisecond)
 
 		s, ok := shrb.Slice("exp_rb2")
 		assert.False(t, ok)
@@ -230,16 +227,14 @@ func TestShardedRingBuffer_Peek_and_Back(t *testing.T) {
 		shrb := NewShardedRingBuffer(4)
 		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb", 5, 1))
 		shrb.Push("exp_rb", "a")
+		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb2", 5, 1))
+		shrb.Push("exp_rb2", "a")
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		val, status := shrb.Peek("exp_rb")
 		assert.Equal(t, shard.StatusExpired, status)
 		assert.Empty(t, val)
-
-		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb2", 5, 1))
-		shrb.Push("exp_rb2", "a")
-		time.Sleep(2100 * time.Millisecond)
 
 		val, status = shrb.Back("exp_rb2")
 		assert.Equal(t, shard.StatusExpired, status)
@@ -283,27 +278,25 @@ func TestShardedRingBuffer_Cap_Len_Reset(t *testing.T) {
 		assert.False(t, shrb.Reset("missing"))
 	})
 
-	t.Run("cap, len, and reset on expired buffer", func(t *testing.T) {
+	t.Run("cap, len, reset, and ttl on expired buffer", func(t *testing.T) {
 		shrb := NewShardedRingBuffer(4)
 		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb", 5, 1))
+		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb2", 5, 1))
+		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb3", 5, 1))
+		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_ttl", 5, 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		c, ok := shrb.Cap("exp_rb")
 		assert.False(t, ok)
 		assert.Equal(t, int64(0), c)
 
-		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb2", 5, 1))
-		time.Sleep(2100 * time.Millisecond)
-
 		l, ok := shrb.Len("exp_rb2")
 		assert.False(t, ok)
 		assert.Equal(t, int64(0), l)
 
-		require.Equal(t, shard.StatusSuccess, shrb.Init("exp_rb3", 5, 1))
-		time.Sleep(2100 * time.Millisecond)
-
 		assert.False(t, shrb.Reset("exp_rb3"))
+		assert.Equal(t, int64(-2), shrb.TTL("exp_ttl"))
 	})
 }
 
@@ -368,7 +361,11 @@ func TestShardedRingBuffer_CleanExpired(t *testing.T) {
 	require.Equal(t, shard.StatusSuccess, shrb.Init("exp1", 5, 1))
 	require.Equal(t, shard.StatusSuccess, shrb.Init("exp2", 5, 1))
 
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(1050 * time.Millisecond)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	shrb.CleanExpiredCtx(canceled)
 
 	shrb.CleanExpired()
 

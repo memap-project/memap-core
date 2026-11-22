@@ -1,6 +1,7 @@
 package shmap
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -62,7 +63,7 @@ func TestShardedMap_Set_and_Get(t *testing.T) {
 		shm := NewShardedMap(4)
 		shm.Set("exp_k", "v", 1)
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		val, ok := shm.Get("exp_k")
 		assert.False(t, ok)
@@ -124,11 +125,14 @@ func TestShardedMap_Expire_and_TTL(t *testing.T) {
 	t.Run("expired key returns TTL -2 and Expire returns StatusExpired", func(t *testing.T) {
 		shm := NewShardedMap(4)
 		shm.Set("exp_k", "v", 1)
+		shm.Set("exp_ttl_only", "v", 1)
 
-		time.Sleep(1100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		assert.Equal(t, shard.StatusExpired, shm.Expire("exp_k", 10))
 		assert.Equal(t, int64(-2), shm.TTL("exp_k"))
+		// Directly calling TTL on an expired key triggers its own lazy deletion
+		assert.Equal(t, int64(-2), shm.TTL("exp_ttl_only"))
 	})
 }
 
@@ -138,7 +142,11 @@ func TestShardedMap_CleanExpired(t *testing.T) {
 	shm.Set("exp1", "v", 1)
 	shm.Set("exp2", "v", 1)
 
-	time.Sleep(2100 * time.Millisecond)
+	time.Sleep(1050 * time.Millisecond)
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	shm.CleanExpiredCtx(canceled)
 
 	shm.CleanExpired()
 

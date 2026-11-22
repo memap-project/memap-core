@@ -1,6 +1,7 @@
 package vals
 
 import (
+	"math"
 	"sync"
 	"testing"
 
@@ -55,6 +56,11 @@ func TestRingBuffer_NewRingBuffer(t *testing.T) {
 		rb, err := NewRingBufferWithMax[string](10, 10)
 		require.NoError(t, err)
 		assert.Equal(t, int64(10), rb.Cap())
+
+		assert.Equal(t, DefaultMaxRingBufferCap, NormalizeMaxRingBufferCap(0))
+		assert.Equal(t, MaxSafeRingBufferCap, NormalizeMaxRingBufferCap(math.MaxInt64))
+		clamped := NewRingBuffer[int64](DefaultMaxRingBufferCap + 1)
+		assert.Equal(t, DefaultMaxRingBufferCap, clamped.Cap())
 	})
 }
 

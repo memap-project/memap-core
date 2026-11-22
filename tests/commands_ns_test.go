@@ -1,6 +1,7 @@
 package tests
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -137,7 +138,7 @@ func Test_CleanExpired(t *testing.T) {
 		require.NoError(t, nm.Set("", "keep_def", "v", 0))
 		require.NoError(t, nm.Set("custom_ns", "keep_cust", "v", 0))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		nm.CleanExpired()
 
@@ -165,6 +166,16 @@ func Test_NewNamespaceManager_NilConfig(t *testing.T) {
 	val, err := nm.Get("", "k")
 	require.NoError(t, err)
 	assert.Equal(t, "v", val)
+
+	ns := NewNamespace(nil)
+	require.NotNil(t, ns)
+	ns.CleanExpired()
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	nm.CleanExpiredCtx(canceledCtx)
+	var nilCtx context.Context
+	nm.CleanExpiredCtx(nilCtx)
 }
 
 func Test_Erase_ConcurrentSafety(t *testing.T) {

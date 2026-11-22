@@ -267,6 +267,9 @@ func Test_BCap_BLen_BReset(t *testing.T) {
 
 		_, err = nm.BLen("missing_ns", "rb")
 		require.ErrorIs(t, err, ErrNamespaceNotFound)
+
+		require.NoError(t, nm.Create("ns1"))
+		require.ErrorIs(t, nm.BReset("ns1", "missing"), ErrKeyNotFound)
 	})
 }
 
@@ -335,7 +338,7 @@ func Test_BExpire_and_BTTL(t *testing.T) {
 		nm := newTestManager()
 		require.NoError(t, nm.BInit("", "exp_rb", 5, 1))
 
-		time.Sleep(2100 * time.Millisecond)
+		time.Sleep(1050 * time.Millisecond)
 
 		_, err := nm.BCap("", "exp_rb")
 		require.ErrorIs(t, err, ErrKeyNotFound)
